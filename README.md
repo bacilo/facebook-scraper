@@ -10,5 +10,32 @@ Anaconda: https://www.continuum.io/downloads
 Please refer to the Jupyter notebook for step-by-step illustrations of how it works:
 [Scraping Basics](ScrapingBasics.ipynb)
 
+## Sample Script
+One quick way to get started would be to create a python script that scrapes a page given the proper credentials, for instance:
+``` python
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import fb_scraper.prodcons
+
+APP_ID = ''
+APP_ID_SECRET = ''
+ACCESS_TOKEN = ''
+PAGE_ID = ''
+
+def main():
+    mgr = fb_scraper.prodcons.Manager(
+        access_token=ACCESS_TOKEN,
+        api_key=APP_ID,
+        api_secret=APP_ID_SECRET,
+        node_id=PAGE_ID
+        )
+    mgr.start()
+
+if __name__ == "__main__":
+    main()
+```
+And run the script to fully scrape the Public Page/Group PAGE_ID
+
 ## Limitations
 Apart from the non-implemented aspects, this scraper is subjected to the limitations/possibilities provided by the Graph API (i.e. cannot scrape closed groups unless it is the admin doing it or inability to scrape a profile page). Please refer to the Graph API Documentation for an understanding of those limitations
