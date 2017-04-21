@@ -183,9 +183,6 @@ class RequestIssuer(threading.Thread):
                 STATS.add_request()
             if req_batch:
                 resp_batch = self.graph.data_request(req_batch)
-                # logging.info('Sending batch with {} requests: {}'
-                #     ' and got {} responses back'.format(
-                #     str(len(req_batch)), req_info, str(len(resp_batch))))
                 logging.info('Sending batch with {} requests: {}'.format(
                     str(len(req_batch)), req_info))
                 if resp_batch:
