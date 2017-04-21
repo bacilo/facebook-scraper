@@ -1,0 +1,15 @@
+# bytecode
+*.pyc
+__pycache__
+
+# Jupyter notebook files
+.ipynb_checkpoints
+jupyter.log
+
+# Generated files
+output
+
+# Temporary... will change this
+ScrapingBasics.ipynb
+_old_versions.zip
+scrape.py
