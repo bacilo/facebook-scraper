@@ -1,23 +1,27 @@
 # -*- coding: utf-8 -*-
 """Facebook Scraper Module
 
-This module implements a graph object that can be used to query Facebook's graph API
+This module implements a graph object that can be used
+to query Facebook's graph API
 """
 import urllib.request
 import urllib.parse
 import logging
 import json
 
+
 class Graph(object):
     """Graph object to query the Facebook graph API
 
     The object should be initialized with a valid Access Token.
-    API Key and API Secret are optional. Should be added if an extended Access Token is wanted
+    API Key and API Secret are optional. Should be added if an
+    extended Access Token is wanted
     """
 
     FEED_FIELDS = (
-        "id,created_time,picture,caption,description,from,message,message_tags,"
-        "name,object_id,parent_id,shares,source,status_type,type,updated_time,with_tags"
+        "id,created_time,picture,caption,description,from,message,"
+        "message_tags,name,object_id,parent_id,shares,source,"
+        "status_type,type,updated_time,with_tags"
         )
     FEED_LIMIT = 200
     REACTION_LIMIT = 100
@@ -26,7 +30,8 @@ class Graph(object):
     def __init__(self, access_token, api_key=None, api_secret=None):
         """
         Initializes the graph object and requires at least the 'Access Token'
-        'Api Key' and 'Api Secret' are optional as they are only used to renew the token
+        'Api Key' and 'Api Secret' are optional as they are only used to
+        renew the token
 
         TODO: Load from config file? (Or should this be done outside?)
         """
@@ -37,23 +42,27 @@ class Graph(object):
     @staticmethod
     def create_request_object(relative_url, req_type, req_to):
         """
-        Creates request strings to use for batch_requests, based on relative_url
+        Creates request strings to use for batch_requests,
+        based on relative_url
 
-        type: can be used to determine the type of request when reading the response
-        to: can be used to link certain attributes (like 'reactions') to the post they belong
+        type: can be used to determine the type of request when reading
+            the response
+        to: can be used to link certain attributes (like 'reactions')
+            to the post they belong
         """
         return {
-            'type':req_type,
-            'to':req_to,
+            'type': req_type,
+            'to': req_to,
             'req': {
-                "method":"GET",
-                "relative_url":"{}".format(relative_url)
+                "method": "GET",
+                "relative_url": "{}".format(relative_url)
                 }
             }
 
     def create_page_request(self, page_id):
         """
-        Creates a request string for a page to use in batch_requests based on page_id
+        Creates a request string for a page to use in
+        batch_requests based on page_id
         """
         return self.create_request_object((
             '{}/feed?limit={}&fields={}'
@@ -94,7 +103,8 @@ class Graph(object):
         Returns 'None' in case of error and logs the error
         """
         try:
-            resp = urllib.request.urlopen('https://graph.facebook.com/v2.8/{}'.format(req))
+            resp = urllib.request.urlopen(
+                'https://graph.facebook.com/v2.8/{}'.format(req))
         except urllib.error.HTTPError as httpe:
             logging.error(httpe)
             logging.error(httpe.headers)
