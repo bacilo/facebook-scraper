@@ -84,31 +84,43 @@ class ProcessData(threading.Thread):
         self.csv_writer = CSVWriter(scrape_id=self.node_id)
         STATS.add_request()
 
-    def act(self, response, resp_type, resp_to):
-        """
-        Acts based on respose type
-        """
-        self.find_next_request(resp=response, req_type=resp_type,
-                               req_to=resp_to)
+    def process_post(self, posts):
+        """Processes the posts received"""
+        for post in posts:
+            self.csv_writer.add_post(post)
+            if 'comments' in post:
+                self.act(post['comments'],
+                         resp_type='comment',
+                         resp_to=post['id'])
+            if 'reactions' in post:
+                self.act(post['reactions'],
+                         resp_type='reaction',
+                         resp_to=post['id'])
+            STATS.add_post()
 
+    def process_comments(self, comments, resp_to):
+        """Processes the comments in a post"""
+        for comment in comments:
+            self.csv_writer.add_comment(comment, resp_to)
+            STATS.add_comment()
+
+    def process_reactions(self, reactions, resp_to):
+        """Processes the reactions to a post"""
+        for reaction in reactions:
+            self.csv_writer.add_reaction(reaction, resp_to)
+            STATS.add_reaction()
+
+    def act(self, response, resp_type, resp_to):
+        """Acts based on respose type"""
+        self.find_next_request(resp=response,
+                               req_type=resp_type,
+                               req_to=resp_to)
         if resp_type == 'post':
-            for post in response['data']:
-                self.csv_writer.add_post(post)
-                STATS.add_post()
-                if 'comments' in post:
-                    self.act(post['comments'], resp_type='comment',
-                             resp_to=post['id'])
-                if 'reactions' in post:
-                    self.act(post['reactions'], resp_type='reaction',
-                             resp_to=post['id'])
+            self.process_post(response['data'])
         elif resp_type == 'comment':
-            for comment in response['data']:
-                self.csv_writer.add_comment(comment, resp_to)
-                STATS.add_comment()
+            self.process_comments(response['data'], resp_to)
         elif resp_type == 'reaction':
-            for reaction in response['data']:
-                self.csv_writer.add_reaction(reaction, resp_to)
-                STATS.add_reaction()
+            self.process_reactions(response['data'], resp_to)
         else:
             logging.error('response type not dealt with')
 
@@ -158,40 +170,51 @@ class RequestIssuer(threading.Thread):
         self.req_queue = kwargs['req_queue']
         self.resp_queue = kwargs['resp_queue']
 
-    def run(self):
+    def prepare_batch(self):
         """
-        Loops until there are some requests on the queue to execute
+        Prepares the next batch of requests
 
         It saves the type of request issued, together with the target of the
         request object (e.g. if requesting reactions, the 'to' could be the
         post that the reactions are from)
+        """
+        reqs = dict()
+        reqs['req_batch'] = []
+        reqs['req_info'] = []
+        while (
+            not self.req_queue.empty() and
+            len(reqs['req_batch']) < BATCH_LIMIT
+                ):
+            req = self.req_queue.get()
+            reqs['req_batch'].append(req['req'])
+            reqs['req_info'].append(
+                {
+                    'type': req['type'],
+                    'to': req['to']
+                })
+            STATS.add_request()
+        return reqs
+
+    def run(self):
+        """
+        Loops until there are some requests on the queue to execute
 
         Responses are added to the response queue, together with the
         'to' and 'type' attributes
         """
         while ISSCRAPING:
-            req_batch = []
-            req_info = []
-            while not self.req_queue.empty() and len(req_batch) < BATCH_LIMIT:
-                req = self.req_queue.get()
-                req_batch.append(req['req'])
-                req_info.append(
-                    {
-                        'type': req['type'],
-                        'to': req['to']
-                    })
-                STATS.add_request()
-            if req_batch:
-                resp_batch = self.graph.data_request(req_batch)
+            reqs = self.prepare_batch()
+            if reqs['req_batch']:
+                resp_batch = self.graph.data_request(reqs['req_batch'])
                 logging.info('Sending batch with {} requests: {}'.format(
-                    str(len(req_batch)), req_info))
+                    str(len(reqs['req_batch'])), reqs['req_info']))
                 if resp_batch:
                     read_b = resp_batch.read()
                     for idx, resp in enumerate(json.loads(read_b)):
                         self.resp_queue.put(
                             {
-                                'type': req_info[idx]['type'],
-                                'to': req_info[idx]['to'],
+                                'type': reqs['req_info'][idx]['type'],
+                                'to': reqs['req_info'][idx]['to'],
                                 'resp': resp
                             })
                         STATS.add_response()
