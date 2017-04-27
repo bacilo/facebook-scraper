@@ -116,6 +116,7 @@ class ProcessData(threading.Thread):
                                req_type=resp_type,
                                req_to=resp_to)
         if resp_type == 'post':
+            logging.error(response)
             self.process_post(response['data'])
         elif resp_type == 'comment':
             self.process_comments(response['data'], resp_to)
@@ -195,6 +196,17 @@ class RequestIssuer(threading.Thread):
             STATS.add_request()
         return reqs
 
+    def process_responses(self, responses, req_info):
+        """Processes the batch of responses received"""
+        for idx, resp in enumerate(json.loads(responses)):
+            self.resp_queue.put(
+                {
+                    'type': req_info[idx]['type'],
+                    'to': req_info[idx]['to'],
+                    'resp': resp
+                })
+            STATS.add_response()
+
     def run(self):
         """
         Loops until there are some requests on the queue to execute
@@ -205,19 +217,14 @@ class RequestIssuer(threading.Thread):
         while ISSCRAPING:
             reqs = self.prepare_batch()
             if reqs['req_batch']:
+                print(
+                    'Sending batch: {} requests of types: {}'
+                    .format(
+                        str(len(reqs['req_batch'])),
+                        reqs['req_info']))
                 resp_batch = self.graph.data_request(reqs['req_batch'])
-                logging.info('Sending batch with {} requests: {}'.format(
-                    str(len(reqs['req_batch'])), reqs['req_info']))
                 if resp_batch:
-                    read_b = resp_batch.read()
-                    for idx, resp in enumerate(json.loads(read_b)):
-                        self.resp_queue.put(
-                            {
-                                'type': reqs['req_info'][idx]['type'],
-                                'to': reqs['req_info'][idx]['to'],
-                                'resp': resp
-                            })
-                        STATS.add_response()
+                    self.process_responses(resp_batch.read(), reqs['req_info'])
 
 
 class Stats(object):
