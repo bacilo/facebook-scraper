@@ -37,6 +37,7 @@ class Manager(object):
         self.graph = Graph(access_token=access_token, api_key=api_key,
                            api_secret=api_secret)
         self.req_queue.put(self.graph.create_page_request(node_id))
+        # self.req_queue.put(self.graph.create_post_request(node_id))
         self.proc_data = ProcessData(name='ProcessData', kwargs={
             'graph': self.graph,
             'req_queue': self.req_queue,
@@ -84,46 +85,66 @@ class ProcessData(threading.Thread):
         self.csv_writer = CSVWriter(scrape_id=self.node_id)
         STATS.add_request()
 
-    def process_post(self, posts):
+    def process_feed(self, posts):
         """Processes the posts received"""
         for post in posts:
             self.csv_writer.add_post(post)
-            if 'comments' in post:
-                self.act(post['comments'],
-                         resp_type='comment',
-                         resp_to=post['id'])
-            if 'reactions' in post:
-                self.act(post['reactions'],
-                         resp_type='reaction',
-                         resp_to=post['id'])
-            STATS.add_post()
+            self.process_post(post)
 
-    def process_comments(self, comments, resp_to):
+    def process_post(self, post):
+        """Processes a post received"""
+        if 'comments' in post:
+            self.act(post['comments'],
+                     resp_type='comment',
+                     resp_to=post['id'])
+        if 'reactions' in post:
+            self.act(post['reactions'],
+                     resp_type='reaction',
+                     resp_to=post['id'])
+        STATS.add_post()
+
+    def process_comments(self, comments, resp_to, sub_comment):
         """Processes the comments in a post"""
         for comment in comments:
-            self.csv_writer.add_comment(comment, resp_to)
-            STATS.add_comment()
+            self.csv_writer.add_comment(comment, resp_to, sub_comment)
+            # logging.debug(comment)
+            # logging.debug('\n\n\n\n')
+            # Added this for subcomments
+            if 'comments' in comment:
+                self.act(comment['comments'], 'subcomment', comment['id'])
+            if sub_comment:
+                STATS.add_sub_comment()
+            else:
+                STATS.add_comment()
 
     def process_reactions(self, reactions, resp_to):
         """Processes the reactions to a post"""
         for reaction in reactions:
             self.csv_writer.add_reaction(reaction, resp_to)
-            STATS.add_reaction()
 
     def act(self, response, resp_type, resp_to):
         """Acts based on respose type"""
         self.find_next_request(resp=response,
                                req_type=resp_type,
                                req_to=resp_to)
-        if resp_type == 'post':
+        try:
+            if resp_type == 'feed':
+                self.process_feed(response['data'])
+            elif resp_type == 'post':
+                self.process_post(response)
+            elif resp_type == 'comment':
+                self.process_comments(response['data'], resp_to, False)
+            elif resp_type == 'subcomment':
+                self.process_comments(response['data'], resp_to, True)
+            elif resp_type == 'reaction':
+                self.process_reactions(response['data'], resp_to)
+            else:
+                logging.error(
+                    'response: {}, type: {}, to: {}  not dealt with'.format(
+                        response, resp_type, resp_to))
+        except KeyError as kerr:
+            logging.error(kerr)
             logging.error(response)
-            self.process_post(response['data'])
-        elif resp_type == 'comment':
-            self.process_comments(response['data'], resp_to)
-        elif resp_type == 'reaction':
-            self.process_reactions(response['data'], resp_to)
-        else:
-            logging.error('response type not dealt with')
 
     def find_next_request(self, resp, req_type, req_to):
         """
@@ -236,6 +257,7 @@ class Stats(object):
         """Initialize stat object"""
         self.nbr_posts = 0
         self.nbr_comments = 0
+        self.nbr_sub_comments = 0
         self.nbr_reactions = 0
         self.nbr_sharedposts = 0
         self.nbr_attachments = 0
@@ -250,6 +272,10 @@ class Stats(object):
     def add_comment(self):
         """Increment comment count"""
         self.nbr_comments = self.nbr_comments + 1
+
+    def add_sub_comment(self):
+        """Increment comment count"""
+        self.nbr_sub_comments = self.nbr_sub_comments + 1
 
     def add_reaction(self):
         """Increment reaction count"""
@@ -280,11 +306,12 @@ class Stats(object):
         User friendly display of scraping statistics
         """
         return (
-            'total of {} posts, {} comments, {} reactions, {} '
-            'attachments, {} shares, {} insights, {} responses, {} requests'
+            'Total: {} posts, {} comments, {} sub_comments, {} reactions, '
+            '{} attachments, {} shares, {} insights, {} responses, {} requests'
             ).format(
                 self.nbr_posts,
                 self.nbr_comments,
+                self.nbr_sub_comments,
                 self.nbr_reactions,
                 self.nbr_attachments,
                 self.nbr_sharedposts,

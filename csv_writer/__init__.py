@@ -138,10 +138,13 @@ class CSVWriter(object):
                 'comment_id',
                 'user_id',
                 'user_name',
-                'created_time'
+                'created_time',
+                'like_count',
+                'comment_count',
+                'sub_comment'
                 ))
 
-    def add_comment(self, comment, post_id):
+    def add_comment(self, comment, post_id, sub_comment):
         """
         Given a comment structure, it writes the corresponding line to the
         CSV file
@@ -149,12 +152,16 @@ class CSVWriter(object):
         with self.open_csv(self.file_names['comments']) as writer:
             writer.writerow((
                 post_id,
-                comment['message'].encode('utf-8') if 'message' in comment
-                else 'n/a',
+                comment['message'].replace('\n', ' ')  # Not utf-8 anymore
+                if 'message' in comment else 'n/a',  # Delete '\n' (should it?)
                 comment['id'],
                 comment['from']['id'],
-                comment['from']['name'].encode('utf-8'),
-                comment['created_time']
+                comment['from']['name'],  # Removed utf-8 encoding
+                comment['created_time'],
+                comment['like_count'],
+                comment['comment_count']
+                if 'comment_count' in comment else 'n/a',
+                '1' if sub_comment else '0'
                 ))
 
     def restart_output_folder(self):
