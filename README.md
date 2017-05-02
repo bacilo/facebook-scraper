@@ -21,16 +21,17 @@ import fb_scraper.prodcons
 APP_ID = ''
 APP_ID_SECRET = ''
 ACCESS_TOKEN = ''
-PAGE_ID = ''
 
 def main():
     mgr = fb_scraper.prodcons.Manager(
         access_token=ACCESS_TOKEN,
         api_key=APP_ID,
-        api_secret=APP_ID_SECRET,
-        node_id=PAGE_ID
+        api_secret=APP_ID_SECRET
         )
     mgr.start()
+
+    mgr.scrape_group('group_id')  # Add group_id
+    mgr.scrape_post('post_id')  # Add full form post_id (i.e. groupid_postid)
 
 if __name__ == "__main__":
     main()
