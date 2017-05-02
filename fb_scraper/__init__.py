@@ -40,7 +40,7 @@ class Graph(object):
         self.api_secret = api_secret
 
     @staticmethod
-    def create_request_object(relative_url, req_type, req_to):
+    def create_request_object(relative_url, req_type, req_to, job_id):
         """
         Creates request strings to use for batch_requests,
         based on relative_url
@@ -51,8 +51,9 @@ class Graph(object):
             to the post they belong
         """
         return {
-            'type': req_type,
-            'to': req_to,
+            'req_type': req_type,
+            'req_to': req_to,
+            'job_id': job_id,
             'req': {
                 "method": "GET",
                 "relative_url": "{}".format(relative_url)
@@ -75,45 +76,39 @@ class Graph(object):
     def str_comments_query(self):
         """String for querying comments"""
         return ('comments.summary(true).limit({}){{id,from,message,'
-                'created_time,like_count,comment_count,{}}}'
-                ).format(self.COMMENT_LIMIT, self.str_sub_comments_query())
+                'created_time,like_count,comment_count,{}}}').format(
+                self.COMMENT_LIMIT, self.str_sub_comments_query())
 
-    def create_page_request(self, page_id):
+    def create_group_request(self, group_id, job_id):
         """
         Creates a request string for a page to use in
         batch_requests based on page_id
         """
-        logging.debug((
-            '{}/feed?limit={}&fields={},{},{}'.format(
-                page_id,
-                self.FEED_LIMIT,
-                self.FEED_FIELDS,
-                self.str_reactions_query(),
-                self.str_comments_query())))
         return self.create_request_object((
             '{}/feed?limit={}&fields={},{},{}'.format(
-                page_id,
+                group_id,
                 self.FEED_LIMIT,
                 self.FEED_FIELDS,
                 self.str_reactions_query(),
-                self.str_comments_query())), req_type='feed', req_to='')
+                self.str_comments_query())),
+                                          req_type='feed',
+                                          req_to='',
+                                          job_id=job_id)
 
-    def create_post_request(self, post_id):
+    def create_post_request(self, post_id, job_id):
         """
         Creates a request string for a post to use in
         batch_requests based on post_id
         Note: could add limit as well?
         """
-        logging.debug((
-            '{}?fields={},{}').format(
-                post_id,
-                self.str_reactions_query(),
-                self.str_comments_query()))
         return self.create_request_object((
             '{}?fields={},{}').format(
                 post_id,
                 self.str_reactions_query(),
-                self.str_comments_query()), req_type='post', req_to='')
+                self.str_comments_query()),
+                                          req_type='post',
+                                          req_to='',
+                                          job_id=job_id)
 
     @staticmethod
     def encode_batch(batch):
