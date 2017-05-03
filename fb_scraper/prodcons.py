@@ -16,25 +16,24 @@ from .job import GroupJob, PostJob
 logging.basicConfig(level=logging.DEBUG,
                     format='(%(threadName)-9s - %(funcName)s): %(message)s',)
 
-ISSCRAPING = True
-
 
 class Manager(object):
     """
     This class is responsible for managing the producer/consummer threads
     """
-    QUEUE_BUF_SIZE = 5000
+    _QUEUE_BUF_SIZE = 5000
 
     def __init__(self, access_token, api_key, api_secret):
         """
         Initializes the manager object and starts shared queues and
         threading objects
         """
-        self.req_queue = Queue(self.QUEUE_BUF_SIZE)
-        self.resp_queue = Queue(self.QUEUE_BUF_SIZE)
+        self.req_queue = Queue(self._QUEUE_BUF_SIZE)
+        self.resp_queue = Queue(self._QUEUE_BUF_SIZE)
         self.graph = Graph(access_token=access_token,
                            api_key=api_key,
                            api_secret=api_secret)
+        logging.info('Extended Access Token: \n%s', self.graph.extend_token())
         self.jobs = dict()
         self.proc_data = ProcessData(
             parent=self,
@@ -45,6 +44,7 @@ class Manager(object):
                 'graph': self.graph,
                 'req_queue': self.req_queue,
                 'resp_queue': self.resp_queue})
+        self._isscraping = True
 
     def add_request(self, request):
         """
@@ -57,6 +57,7 @@ class Manager(object):
             job_id=request['job_id']))
 
     def scrape_group(self, group_id):
+        """ Initiates the scraping of a group """
         job = GroupJob(group_id)
         job.register_callback(self.add_request)
         job.stats.add_request()
@@ -65,6 +66,7 @@ class Manager(object):
                                                            job.job_id))
 
     def scrape_post(self, post_id):
+        """ Initiaties the scraping of a single post """
         job = PostJob(post_id)
         job.register_callback(self.add_request)
         job.stats.add_request()
@@ -79,11 +81,13 @@ class Manager(object):
         self.proc_data.start()
         time.sleep(2)
 
-    @staticmethod
-    def stop():
+    def stop(self):
         """Stops the threads"""
-        global ISSCRAPING
-        ISSCRAPING = False
+        self._isscraping = False
+
+    def is_scraping(self):
+        """Determins if scraping has ended"""
+        return self._isscraping
 
 
 class ProcessData(threading.Thread):
@@ -101,14 +105,14 @@ class ProcessData(threading.Thread):
         self.mgr = parent
 
     def run(self):
-        while ISSCRAPING:
+        while self.mgr.is_scraping():
             while not self.resp_queue.empty():
                 resp = self.resp_queue.get()
                 job_id = resp['job_id']
                 self.mgr.jobs[job_id].act(resp)
                 self.mgr.jobs[job_id].stats.add_response()
                 for job_id in list(self.mgr.jobs.keys()):
-                    # logging.info(self.mgr.jobs[job_id].stats)
+                    logging.info(self.mgr.jobs[job_id].stats)
                     if self.mgr.jobs[job_id].finished():
                         del self.mgr.jobs[job_id]
                 if not self.mgr.jobs:
@@ -121,7 +125,7 @@ class RequestIssuer(threading.Thread):
 
     This class needs a Graph object to issue requests
     """
-    BATCH_LIMIT = 50
+    _BATCH_LIMIT = 50
 
     def __init__(self, parent, kwargs=None):
         """
@@ -145,7 +149,7 @@ class RequestIssuer(threading.Thread):
         reqs['req_batch'] = []
         reqs['req_info'] = []
         while (not self.req_queue.empty() and
-               len(reqs['req_batch']) < self.BATCH_LIMIT):
+               len(reqs['req_batch']) < self._BATCH_LIMIT):
             req = self.req_queue.get()
             reqs['req_batch'].append(req['req'])
             reqs['req_info'].append(
@@ -174,7 +178,7 @@ class RequestIssuer(threading.Thread):
         Responses are added to the response queue, together with the
         'to' and 'type' attributes
         """
-        while ISSCRAPING:
+        while self.mgr.is_scraping():
             reqs = self.prepare_batch()
             if reqs['req_batch']:
                 logging.info('Sending batch with: %d requests',

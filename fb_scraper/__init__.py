@@ -23,7 +23,7 @@ class Graph(object):
         "message_tags,name,object_id,parent_id,shares,source,"
         "status_type,type,updated_time,with_tags"
         )
-    FEED_LIMIT = 50
+    FEED_LIMIT = 200
     REACTION_LIMIT = 100
     COMMENT_LIMIT = 50
 
@@ -77,7 +77,7 @@ class Graph(object):
         """String for querying comments"""
         return ('comments.summary(true).limit({}){{id,from,message,'
                 'created_time,like_count,comment_count,{}}}').format(
-                self.COMMENT_LIMIT, self.str_sub_comments_query())
+                    self.COMMENT_LIMIT, self.str_sub_comments_query())
 
     def create_group_request(self, group_id, job_id):
         """
@@ -155,7 +155,7 @@ class Graph(object):
         """
         if not self.api_key or not self.api_secret:
             logging.error('No API Key and/or API Secret defined')
-            return
+            return None
 
         resp = self.request(
             req='oauth/access_token?grant_type=fb_exchange_token&client_id={}'

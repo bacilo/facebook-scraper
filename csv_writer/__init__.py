@@ -16,6 +16,10 @@ class CSVWriter(object):
         self.file_name = '{}_{}.csv'.format(job_id, data_type)
         self.path = '{}/{}/'.format(self.OUTPUT_FOLDER, job_id)
         try:
+            os.mkdir(self.OUTPUT_FOLDER)
+        except FileExistsError:  # Folder already created
+            pass
+        try:
             os.mkdir(self.path)
         except FileExistsError:  # Folder already created
             pass
@@ -50,6 +54,37 @@ class CSVWriter(object):
                             quoting=csv.QUOTE_NONNUMERIC)
         yield writer
         the_file.close()
+
+
+class AttachmentWriter(CSVWriter):
+    """Implementation of a class to write attachments """
+
+    def __init__(self, job_id):
+        super().__init__(job_id, 'attachments')
+
+    def header(self):
+        self.write((
+            'target_id',  # Post or comment containing attachments
+            'description',
+            'description_tags',  # This is a list
+            'media',
+            'target',
+            'title',
+            'type',
+            'url'
+            ))
+
+    def row(self, data):  # some might be empty!
+        self.write((
+            data['target_id'],  # must be added before
+            data['description'],
+            data['description_tags'],
+            data['media'],
+            data['target'],
+            data['title'],
+            data['type'],
+            data['url']
+            ))
 
 
 class ReactionWriter(CSVWriter):
