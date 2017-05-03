@@ -23,7 +23,7 @@ class Graph(object):
         "message_tags,name,object_id,parent_id,shares,source,"
         "status_type,type,updated_time,with_tags"
         )
-    FEED_LIMIT = 200
+    FEED_LIMIT = 100
     REACTION_LIMIT = 100
     COMMENT_LIMIT = 50
 
@@ -60,6 +60,12 @@ class Graph(object):
                 }
             }
 
+    @staticmethod
+    def str_attachments_query():
+        """String for querying attachments"""
+        return ('attachments{description, description_tags, media,'
+                'target, title, type, url}')
+
     def str_reactions_query(self):
         """String for querying reactions"""
         return 'reactions.summary(true).limit({}){{id,name,type}}'.format(
@@ -71,13 +77,14 @@ class Graph(object):
         String for querying sub-comments
         Note: Limit could be defined for this
         """
-        return 'comments{id,from,message,created_time,like_count}'
+        return 'comments{id,from,message,created_time,like_count,}'
 
     def str_comments_query(self):
         """String for querying comments"""
         return ('comments.summary(true).limit({}){{id,from,message,'
                 'created_time,like_count,comment_count,{}}}').format(
-                    self.COMMENT_LIMIT, self.str_sub_comments_query())
+                    self.COMMENT_LIMIT,
+                    self.str_sub_comments_query())
 
     def create_group_request(self, group_id, job_id):
         """
@@ -85,12 +92,13 @@ class Graph(object):
         batch_requests based on page_id
         """
         return self.create_request_object((
-            '{}/feed?limit={}&fields={},{},{}'.format(
+            '{}/feed?limit={}&fields={},{},{},{}'.format(
                 group_id,
                 self.FEED_LIMIT,
                 self.FEED_FIELDS,
                 self.str_reactions_query(),
-                self.str_comments_query())),
+                self.str_comments_query(),
+                self.str_attachments_query())),
                                           req_type='feed',
                                           req_to='',
                                           job_id=job_id)
@@ -102,10 +110,11 @@ class Graph(object):
         Note: could add limit as well?
         """
         return self.create_request_object((
-            '{}?fields={},{}').format(
+            '{}?fields={},{},{}').format(
                 post_id,
                 self.str_reactions_query(),
-                self.str_comments_query()),
+                self.str_comments_query(),
+                self.str_attachments_query()),
                                           req_type='post',
                                           req_to='',
                                           job_id=job_id)

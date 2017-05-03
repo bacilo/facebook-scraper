@@ -2,6 +2,12 @@
 """CSV Writer
 
 This class will be dumping the scraped data to different CSV files
+
+NOTE: must deal with encoding('utf-8') as it seems to encode foreign
+characters, emoticons, etc...
+Removing it though, at least in Excel importing, has the issue of
+messages running over several lines if a '\n' is present and destroying
+the CSV file structure
 """
 import os
 from contextlib import contextmanager
@@ -13,7 +19,9 @@ class CSVWriter(object):
     OUTPUT_FOLDER = 'output'
 
     def __init__(self, job_id, data_type):
-        self.file_name = '{}_{}.csv'.format(job_id, data_type)
+        self.file_name = '{}_{}.csv'.format(
+            job_id,
+            data_type)
         self.path = '{}/{}/'.format(self.OUTPUT_FOLDER, job_id)
         try:
             os.mkdir(self.OUTPUT_FOLDER)
@@ -77,13 +85,15 @@ class AttachmentWriter(CSVWriter):
     def row(self, data):  # some might be empty!
         self.write((
             data['target_id'],  # must be added before
-            data['description'],
-            data['description_tags'],
-            data['media'],
-            data['target'],
-            data['title'],
-            data['type'],
-            data['url']
+            data['description'].encode('utf-8') if 'description' in data
+            else 'n/a',
+            data['description_tags'] if 'description_tags' in data
+            else 'n/a',
+            data['media'] if 'media' in data else 'n/a',
+            data['target'] if 'target' in data else 'n/a',
+            data['title'] if 'title' in data else 'n/a',
+            data['type'] if 'type' in data else 'n/a',
+            data['url'] if 'url' in data else 'n/a'
             ))
 
 
@@ -115,6 +125,7 @@ class PostWriter(CSVWriter):
 
     def __init__(self, job_id):
         super().__init__(job_id, 'posts')
+        self.attachwriter = AttachmentWriter(job_id)
 
     def header(self):
         self.write((
@@ -158,6 +169,10 @@ class PostWriter(CSVWriter):
             data['type'] if 'type' in data else 'n/a',
             data['updated_time'] if 'updated_time' in data else 'n/a'
             ))
+        if 'attachments' in data:
+            for att in data['attachments']['data']:
+                att['target_id'] = data['id']
+                self.attachwriter.row(att)
 
 
 class CommentWriter(CSVWriter):

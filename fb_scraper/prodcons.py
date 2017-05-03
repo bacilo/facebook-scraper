@@ -163,6 +163,7 @@ class RequestIssuer(threading.Thread):
     def process_responses(self, responses, req_info):
         """Processes the batch of responses received"""
         for idx, resp in enumerate(json.loads(responses)):
+            # logging.debug(resp)
             self.resp_queue.put(
                 {
                     'req_type': req_info[idx]['req_type'],
