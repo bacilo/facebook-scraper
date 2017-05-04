@@ -33,6 +33,8 @@ class Job(object):
         self.callback = callback
         self.writers = dict()
         self.stats = JobStats(self.job_id)
+        self.abrupt_ending = False
+        self.max_posts = 1000000
 
     @property
     def job_id(self):
@@ -47,6 +49,9 @@ class Job(object):
             self.writers['posts'].row(post)
             self.process_post(post)
             self.stats.add_post()
+            if self.stats.nbr_posts >= self.max_posts:
+                self.abrupt_ending = True
+                return
 
     @staticmethod
     def build_req(resp, req_type, req_to):
@@ -149,13 +154,15 @@ class Job(object):
 
     def finished(self):
         """ Checks if job has finished scraping """
-        return self.stats.nbr_requests == self.stats.nbr_responses
+        return (self.abrupt_ending or
+                (self.stats.nbr_requests == self.stats.nbr_responses))
 
 
 class GroupJob(Job):
     """ This class implements the specific 'Group scraping job' """
     def __init__(self, node_id, callback, max_posts):
         super().__init__('feed', node_id, callback)
+        self.max_posts = max_posts
         self.writers['posts'] = csv_writer.PostWriter(self.job_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)

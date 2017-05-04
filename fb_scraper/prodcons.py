@@ -56,7 +56,7 @@ class Manager(object):
             req_to=request['req_to'],
             job_id=request['job_id']))
 
-    def scrape_group(self, group_id, since=None, until=None, max_posts=0):
+    def scrape_group(self, group_id, since=None, until=None, max_posts=100000):
         """ Initiates the scraping of a group """
         job = GroupJob(group_id, self.add_request, max_posts)
         job.stats.add_request()
