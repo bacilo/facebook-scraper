@@ -42,29 +42,38 @@ class Job(object):
             self._job_type,
             self._node_id)
 
-    def register_callback(self, callback):
-        self.callback = callback
-
     def process_feed(self, posts):
         for post in posts:
             self.writers['posts'].row(post)
             self.process_post(post)
             self.stats.add_post()
 
+    @staticmethod
+    def build_req(resp, req_type, req_to):
+        """ Builds the request data structure """
+        data = dict()
+        data['resp'] = resp
+        data['req_type'] = req_type
+        data['req_to'] = req_to
+        return data
+
     def process_post(self, post):
         """Processes a post received"""
         if 'comments' in post:
-            data = dict()
-            data['resp'] = post['comments']
-            data['req_type'] = 'comment'
-            data['req_to'] = post['id']
-            self.act(data)
+            self.act(self.build_req(
+                post['comments'],
+                'comment',
+                post['id']))
         if 'reactions' in post:
-            data = dict()
-            data['resp'] = post['reactions']
-            data['req_type'] = 'reaction'
-            data['req_to'] = post['id']
-            self.act(data)
+            self.act(self.build_req(
+                post['reactions'],
+                'reaction',
+                post['id']))
+        if 'attachments' in post:
+            for att in post['attachments']['data']:
+                att['target_id'] = post['id']
+                self.writers['attachments'].row(att)
+                self.stats.add_attachment()
 
     def process_comments(self, comments):
         """ Processes comments """
@@ -74,13 +83,13 @@ class Job(object):
             self.writers['comments'].row(comment)
             self.stats.add_comment()
             if 'comments' in comment:
-                data = dict()
-                data['resp'] = comment['comments']
-                data['req_type'] = 'subcomment'
-                data['req_to'] = comment['id']
-                self.act(data)
+                self.act(self.build_req(
+                    comment['comments'],
+                    'subcomment',
+                    comment['id']))
 
     def process_subcomments(self, comments):
+        """ Processes subcomments """
         for comment in comments['resp']['data']:
             comment['to_id'] = comments['req_to']
             comment['sub_comment'] = '1'
@@ -88,6 +97,7 @@ class Job(object):
             self.stats.add_sub_comment()
 
     def process_reactions(self, reactions):
+        """ Processes reactions """
         for reaction in reactions['resp']['data']:
             reaction['to_id'] = reactions['req_to']
             self.writers['reactions'].row(reaction)
@@ -118,7 +128,6 @@ class Job(object):
         except KeyError as kerr:
             logging.error('KeyError %s:', kerr)
             logging.error(data)
-            # import ipdb; ipdb.set_trace()
 
     def find_next_request(self, data):
         """
@@ -126,16 +135,15 @@ class Job(object):
         """
         try:
             # Make this a little tidier by removing hardcoded link
-            rel_url = data['resp']['paging']['next'].split(
-                'https://graph.facebook.com/v2.8/')[1]
+            url = data['resp']['paging']['next']
             self.callback({
-                'relative_url': rel_url,
+                'url': url,
                 'req_type': data['req_type'],
                 'req_to': data['req_to'],
                 'job_id': self.job_id
             })
             self.stats.add_request()
-        except KeyError as kerr:
+        except KeyError:
             # import ipdb; ipdb.set_trace()
             pass
 
@@ -146,19 +154,21 @@ class Job(object):
 
 class GroupJob(Job):
     """ This class implements the specific 'Group scraping job' """
-    def __init__(self, node_id):
-        super().__init__('feed', node_id)
+    def __init__(self, node_id, callback, max_posts):
+        super().__init__('feed', node_id, callback)
         self.writers['posts'] = csv_writer.PostWriter(self.job_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
+        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
 
 
 class PostJob(Job):
     """ This class implemepnts the specific 'Post scraping job' """
-    def __init__(self, node_id):
-        super().__init__('post', node_id)
+    def __init__(self, node_id, callback):
+        super().__init__('post', node_id, callback)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
+        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
 
 
 class JobStats(object):

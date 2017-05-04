@@ -18,6 +18,7 @@ class Graph(object):
     extended Access Token is wanted
     """
 
+    API_ENDPOINT = 'https://graph.facebook.com/v2.9/'
     FEED_FIELDS = (
         "id,created_time,picture,caption,description,from,message,"
         "message_tags,name,object_id,parent_id,shares,source,"
@@ -40,10 +41,10 @@ class Graph(object):
         self.api_secret = api_secret
 
     @staticmethod
-    def create_request_object(relative_url, req_type, req_to, job_id):
+    def create_request_object(rel_url, req_type, req_to, job_id):
         """
         Creates request strings to use for batch_requests,
-        based on relative_url
+        based on rel_url
 
         type: can be used to determine the type of request when reading
             the response
@@ -56,7 +57,7 @@ class Graph(object):
             'job_id': job_id,
             'req': {
                 "method": "GET",
-                "relative_url": "{}".format(relative_url)
+                "relative_url": "{}".format(rel_url)
                 }
             }
 
@@ -77,7 +78,7 @@ class Graph(object):
         String for querying sub-comments
         Note: Limit could be defined for this
         """
-        return 'comments{id,from,message,created_time,like_count,}'
+        return 'comments{id,from,message,created_time,like_count}'
 
     def str_comments_query(self):
         """String for querying comments"""
@@ -86,15 +87,33 @@ class Graph(object):
                     self.COMMENT_LIMIT,
                     self.str_sub_comments_query())
 
-    def create_group_request(self, group_id, job_id):
+    def create_group_request(
+            self,
+            group_id,
+            job_id,
+            since=None,
+            until=None):
         """
         Creates a request string for a page to use in
         batch_requests based on page_id
+
+        Since/Until fields:
+            Can be empty, or of one the two forms
+            YYYY-MM-DD
+            YYYY-MM-DDTHH:MM:SS
         """
+        since_str = ''
+        until_str = ''
+        if since:
+            since_str = '&since={}'.format(since)
+        if until:
+            until_str = '&until={}'.format(until)
         return self.create_request_object((
-            '{}/feed?limit={}&fields={},{},{},{}'.format(
+            '{}/feed?limit={}{}{}&fields={},{},{},{}'.format(
                 group_id,
                 self.FEED_LIMIT,
+                since_str,
+                until_str,
                 self.FEED_FIELDS,
                 self.str_reactions_query(),
                 self.str_comments_query(),
@@ -119,14 +138,14 @@ class Graph(object):
                                           req_to='',
                                           job_id=job_id)
 
-    @staticmethod
-    def encode_batch(batch):
-        """
-        URL encodes the batch to prepare it for a graph API request
-        """
-        _json = json.dumps(batch)
-        _url = urllib.parse.urlparse(_json)
-        return _url
+    # @staticmethod
+    # def encode_batch(batch):
+    #     """
+    #     URL encodes the batch to prepare it for a graph API request
+    #     """
+    #     _json = json.dumps(batch)
+    #     _url = urllib.parse.urlparse(_json)
+    #     return _url
 
     def data_request(self, batch_requests):
         """
@@ -139,15 +158,16 @@ class Graph(object):
         resp_batch = self.request(req=url_req)
         return resp_batch
 
-    @staticmethod
-    def request(req):
+    def request(self, req):
         """
         Executes a generic API request and returns the response
         Returns 'None' in case of error and logs the error
         """
         try:
             resp = urllib.request.urlopen(
-                'https://graph.facebook.com/v2.8/{}'.format(req))
+                '{}{}'.format(
+                    self.API_ENDPOINT,
+                    req))
         except urllib.error.HTTPError as httpe:
             logging.error(httpe)
             logging.error(httpe.headers)

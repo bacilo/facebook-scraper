@@ -51,24 +51,25 @@ class Manager(object):
         Used as a callback passed to the Jobs so they can register requests
         """
         self.req_queue.put(self.graph.create_request_object(
-            relative_url=request['relative_url'],
+            rel_url=request['url'].split(self.graph.API_ENDPOINT)[1],
             req_type=request['req_type'],
             req_to=request['req_to'],
             job_id=request['job_id']))
 
-    def scrape_group(self, group_id):
+    def scrape_group(self, group_id, since=None, until=None, max_posts=0):
         """ Initiates the scraping of a group """
-        job = GroupJob(group_id)
-        job.register_callback(self.add_request)
+        job = GroupJob(group_id, self.add_request, max_posts)
         job.stats.add_request()
         self.jobs[job.job_id] = job
-        self.req_queue.put(self.graph.create_group_request(group_id,
-                                                           job.job_id))
+        self.req_queue.put(
+            self.graph.create_group_request(group_id=group_id,
+                                            job_id=job.job_id,
+                                            since=since,
+                                            until=until))
 
     def scrape_post(self, post_id):
         """ Initiaties the scraping of a single post """
-        job = PostJob(post_id)
-        job.register_callback(self.add_request)
+        job = PostJob(post_id, self.add_request)
         job.stats.add_request()
         self.jobs[job.job_id] = job
         self.req_queue.put(self.graph.create_post_request(post_id,

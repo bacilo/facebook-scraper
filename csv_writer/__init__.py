@@ -125,7 +125,6 @@ class PostWriter(CSVWriter):
 
     def __init__(self, job_id):
         super().__init__(job_id, 'posts')
-        self.attachwriter = AttachmentWriter(job_id)
 
     def header(self):
         self.write((
@@ -169,10 +168,6 @@ class PostWriter(CSVWriter):
             data['type'] if 'type' in data else 'n/a',
             data['updated_time'] if 'updated_time' in data else 'n/a'
             ))
-        if 'attachments' in data:
-            for att in data['attachments']['data']:
-                att['target_id'] = data['id']
-                self.attachwriter.row(att)
 
 
 class CommentWriter(CSVWriter):
