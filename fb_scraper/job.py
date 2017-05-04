@@ -13,7 +13,26 @@ logging.basicConfig(level=logging.DEBUG,
                     format='(%(threadName)-9s - %(funcName)s): %(message)s',)
 
 
-class Job(object):
+class JobStats(object):
+    def __init__(self):
+        self.stats = dict()
+        self.stats['responses'] = 0
+        self.stats['requests'] = 0
+
+    def inc(self, indicator):
+        """increments a given indicator"""
+        if indicator not in self.stats:
+            self.stats[indicator] = 0
+        else:
+            self.stats[indicator] += 1
+
+    def __str__(self):
+        """produces a string with all the indicators"""
+        return ''.join(
+            ['%s %s,' % (value, key) for (key, value) in self.stats.items()])
+
+
+class Job(JobStats):
     """
     This class defines the generic scraping effort (or 'job')
     """
@@ -24,6 +43,8 @@ class Job(object):
         job_type: 'feed', 'post', 'page'
         node_id: the id of the node where the scraping starts
         """
+        super().__init__()
+        self.inc('requests')
         self._job_type = job_type
         self._node_id = node_id
         self._timestamp = (str(datetime.datetime.utcnow())
@@ -32,7 +53,6 @@ class Job(object):
                            .replace(' ', '_'))
         self.callback = callback
         self.writers = dict()
-        self.stats = JobStats(self.job_id)
         self.abrupt_ending = False
         self.max_posts = 1000000
 
@@ -48,8 +68,8 @@ class Job(object):
         for post in posts:
             self.writers['posts'].row(post)
             self.process_post(post)
-            self.stats.add_post()
-            if self.stats.nbr_posts >= self.max_posts:
+            self.inc('posts')
+            if self.stats['posts'] >= self.max_posts:
                 self.abrupt_ending = True
                 return
 
@@ -78,7 +98,7 @@ class Job(object):
             for att in post['attachments']['data']:
                 att['target_id'] = post['id']
                 self.writers['attachments'].row(att)
-                self.stats.add_attachment()
+                self.inc('attachments')
 
     def process_comments(self, comments):
         """ Processes comments """
@@ -86,7 +106,7 @@ class Job(object):
             comment['to_id'] = comments['req_to']
             comment['sub_comment'] = '0'
             self.writers['comments'].row(comment)
-            self.stats.add_comment()
+            self.inc('comments')
             if 'comments' in comment:
                 self.act(self.build_req(
                     comment['comments'],
@@ -99,14 +119,14 @@ class Job(object):
             comment['to_id'] = comments['req_to']
             comment['sub_comment'] = '1'
             self.writers['comments'].row(comment)
-            self.stats.add_sub_comment()
+            self.inc('sub_comments')
 
     def process_reactions(self, reactions):
         """ Processes reactions """
         for reaction in reactions['resp']['data']:
             reaction['to_id'] = reactions['req_to']
             self.writers['reactions'].row(reaction)
-            self.stats.add_reaction()
+            self.inc('reactions')
 
     def act(self, data):
         """ Acts upon received data """
@@ -147,7 +167,7 @@ class Job(object):
                 'req_to': data['req_to'],
                 'job_id': self.job_id
             })
-            self.stats.add_request()
+            self.inc('requests')
         except KeyError:
             # import ipdb; ipdb.set_trace()
             pass
@@ -155,7 +175,11 @@ class Job(object):
     def finished(self):
         """ Checks if job has finished scraping """
         return (self.abrupt_ending or
-                (self.stats.nbr_requests == self.stats.nbr_responses))
+                (self.stats['requests'] == self.stats['responses']))
+
+    def __str__(self):
+        return 'Job {}, total: {}'.format(
+            self.job_id, super(Job, self).__str__())
 
 
 class GroupJob(Job):
@@ -176,78 +200,3 @@ class PostJob(Job):
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
-
-
-class JobStats(object):
-    """
-    Class that allows the keeping, and display, of scraping stats for
-    logging and monitoring
-    """
-    def __init__(self, job_id):
-        """Initialize stat object"""
-        self.job_id = job_id
-        self.nbr_posts = 0
-        self.nbr_comments = 0
-        self.nbr_sub_comments = 0
-        self.nbr_reactions = 0
-        self.nbr_sharedposts = 0
-        self.nbr_attachments = 0
-        self.nbr_insights = 0
-        self.nbr_requests = 0
-        self.nbr_responses = 0
-
-    def add_post(self):
-        """Increment post count"""
-        self.nbr_posts = self.nbr_posts + 1
-
-    def add_comment(self):
-        """Increment comment count"""
-        self.nbr_comments = self.nbr_comments + 1
-
-    def add_sub_comment(self):
-        """Increment comment count"""
-        self.nbr_sub_comments = self.nbr_sub_comments + 1
-
-    def add_reaction(self):
-        """Increment reaction count"""
-        self.nbr_reactions = self.nbr_reactions + 1
-
-    def add_sharedpost(self):
-        """Increment sharedposts count"""
-        self.nbr_sharedposts = self.nbr_sharedposts + 1
-
-    def add_attachment(self):
-        """Increment attachment count"""
-        self.nbr_attachments = self.nbr_attachments + 1
-
-    def add_insight(self):
-        """Increment insight count"""
-        self.nbr_insights = self.nbr_insights + 1
-
-    def add_request(self):
-        """Increment request count"""
-        self.nbr_requests = self.nbr_requests + 1
-
-    def add_response(self):
-        """Increment response count"""
-        self.nbr_responses = self.nbr_responses + 1
-
-    def __str__(self):
-        """
-        User friendly display of scraping statistics
-        """
-        return (
-            'Job: {}, total: {} posts, {} comms, {} sub_comms, '
-            '{} reacts, {} attachmnts, {} shares, {} insights, '
-            '{} resps, {} reqs'
-            ).format(
-                self.job_id,
-                self.nbr_posts,
-                self.nbr_comments,
-                self.nbr_sub_comments,
-                self.nbr_reactions,
-                self.nbr_attachments,
-                self.nbr_sharedposts,
-                self.nbr_insights,
-                self.nbr_responses,
-                self.nbr_requests)

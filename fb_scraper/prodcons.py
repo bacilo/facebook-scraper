@@ -59,7 +59,6 @@ class Manager(object):
     def scrape_group(self, group_id, since=None, until=None, max_posts=100000):
         """ Initiates the scraping of a group """
         job = GroupJob(group_id, self.add_request, max_posts)
-        job.stats.add_request()
         self.jobs[job.job_id] = job
         self.req_queue.put(
             self.graph.create_group_request(group_id=group_id,
@@ -70,7 +69,6 @@ class Manager(object):
     def scrape_post(self, post_id):
         """ Initiaties the scraping of a single post """
         job = PostJob(post_id, self.add_request)
-        job.stats.add_request()
         self.jobs[job.job_id] = job
         self.req_queue.put(self.graph.create_post_request(post_id,
                                                           job.job_id))
@@ -111,9 +109,9 @@ class ProcessData(threading.Thread):
                 resp = self.resp_queue.get()
                 job_id = resp['job_id']
                 self.mgr.jobs[job_id].act(resp)
-                self.mgr.jobs[job_id].stats.add_response()
+                self.mgr.jobs[job_id].inc('responses')
                 for job_id in list(self.mgr.jobs.keys()):
-                    logging.info(self.mgr.jobs[job_id].stats)
+                    logging.info(self.mgr.jobs[job_id])
                     if self.mgr.jobs[job_id].finished():
                         del self.mgr.jobs[job_id]
                 if not self.mgr.jobs:
