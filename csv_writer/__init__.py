@@ -104,7 +104,6 @@ class AttachmentWriter(CSVWriter):
 
 class ReactionWriter(CSVWriter):
     """ Implementation of a class to write reactions """
-
     def __init__(self, job_id):
         super().__init__(job_id, 'reactions')
 
@@ -127,7 +126,6 @@ class ReactionWriter(CSVWriter):
 
 class PostWriter(CSVWriter):
     """ Implementation of a class to write posts """
-
     def __init__(self, job_id):
         super().__init__(job_id, 'posts')
 
@@ -191,7 +189,6 @@ class CommentWriter(CSVWriter):
         - Filter
     https://developers.facebook.com/docs/graph-api/reference/v2.9/object/comments
     """
-
     def __init__(self, job_id):
         super().__init__(job_id, 'comments')
 
@@ -233,7 +230,6 @@ class SharedPostsWriter(CSVWriter):
         with a single value and have not yet seen an exception
         but best keep this in mind
     """
-
     def __init__(self, job_id):
         super().__init__(job_id, 'sharedposts')
 

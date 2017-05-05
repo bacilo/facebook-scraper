@@ -9,6 +9,9 @@ import urllib.parse
 import logging
 import json
 
+logging.basicConfig(level=logging.DEBUG,
+                    format='(%(threadName)-9s - %(funcName)s): %(message)s',)
+
 
 class Graph(object):
     """Graph object to query the Facebook graph API
@@ -103,8 +106,8 @@ class Graph(object):
             self,
             group_id,
             job_id,
-            since=None,
-            until=None):
+            since='',
+            until=''):
         """
         Creates a request string for a page to use in
         batch_requests based on page_id
@@ -114,18 +117,16 @@ class Graph(object):
             YYYY-MM-DD
             YYYY-MM-DDTHH:MM:SS
         """
-        since_str = ''
-        until_str = ''
         if since:
-            since_str = '&since={}'.format(since)
+            since = '&since={}'.format(since)
         if until:
-            until_str = '&until={}'.format(until)
+            until = '&until={}'.format(until)
         return self.create_request_object((
             '{}/feed?limit={}{}{}&fields={},{},{},{},{}'.format(
                 group_id,
                 self.FEED_LIMIT,
-                since_str,
-                until_str,
+                since,
+                until,
                 self.FEED_FIELDS,
                 self.str_reactions_query(),
                 self.str_comments_query(),
@@ -206,4 +207,5 @@ class Graph(object):
                 self.api_key, self.api_secret, self.access_token))
         msg = json.loads(resp.read().decode('utf-8'))
         self.access_token = msg['access_token']
+        logging.info('Extended Access Token: \n%s', self.access_token)
         return self.access_token

@@ -33,17 +33,10 @@ class Manager(object):
         self.graph = Graph(access_token=access_token,
                            api_key=api_key,
                            api_secret=api_secret)
-        logging.info('Extended Access Token: \n%s', self.graph.extend_token())
+        self.graph.extend_token()
+        self.proc_data = ProcessData(parent=self)
+        self.req_issuer = RequestIssuer(parent=self)
         self.jobs = dict()
-        self.proc_data = ProcessData(
-            parent=self,
-            kwargs={'resp_queue': self.resp_queue})
-        self.req_issuer = RequestIssuer(
-            parent=self,
-            kwargs={
-                'graph': self.graph,
-                'req_queue': self.req_queue,
-                'resp_queue': self.resp_queue})
         self._isscraping = True
 
     def add_request(self, request):
@@ -93,28 +86,44 @@ class ProcessData(threading.Thread):
     """
     This class defines a thread that processes data received from the FB API
     """
-    def __init__(self,
-                 parent,
-                 kwargs=None):
+    def __init__(self, parent):
         """
         Initializes the thread object for processing received data.
         """
         super(ProcessData, self).__init__()
-        self.resp_queue = kwargs['resp_queue']
         self.mgr = parent
+
+    def check_jobs_statuses(self):
+        """
+        Checks the status of all jobs (whether still
+        scraping or whether they are done)
+
+        NOTE:
+            - Prints a result to the user
+            - Removes finished jobs
+        """
+        for job_id in list(self.mgr.jobs.keys()):
+            logging.info(self.mgr.jobs[job_id])
+            if self.mgr.jobs[job_id].finished():
+                del self.mgr.jobs[job_id]
+                logging.info('Job %s has finished!', job_id)
+
+    def process_response(self, response):
+        """
+        Takes a response and gets the appropriate job
+        to deal with it
+
+        It also increments the stats count for 'responses'
+        """
+        job_id = response['job_id']
+        self.mgr.jobs[job_id].act(response)
+        self.mgr.jobs[job_id].inc('responses')
 
     def run(self):
         while self.mgr.is_scraping():
-            while not self.resp_queue.empty():
-                resp = self.resp_queue.get()
-                job_id = resp['job_id']
-                self.mgr.jobs[job_id].act(resp)
-                self.mgr.jobs[job_id].inc('responses')
-                for job_id in list(self.mgr.jobs.keys()):
-                    logging.info(self.mgr.jobs[job_id])
-                    if self.mgr.jobs[job_id].finished():
-                        del self.mgr.jobs[job_id]
-                        logging.info('Job %s has finished!', job_id)
+            while not self.mgr.resp_queue.empty():
+                self.process_response(self.mgr.resp_queue.get())
+                self.check_jobs_statuses()
                 if not self.mgr.jobs:
                     self.mgr.stop()
 
@@ -133,49 +142,49 @@ class RequestIssuer(threading.Thread):
         """
         super(RequestIssuer, self).__init__()
         self.mgr = parent
-        self.graph = kwargs['graph']
-        self.req_queue = kwargs['req_queue']
-        self.resp_queue = kwargs['resp_queue']
 
     def prepare_batch(self):
         """
-        Prepares the next batch of requests
-
-        It saves the type of request issued, together with the target of the
-        request object (e.g. if requesting reactions, the 'to' could be the
-        post that the reactions are from)
+        Prepares the batch
         """
-        reqs = dict()
-        reqs['req_batch'] = []
-        reqs['req_info'] = []
-        while (not self.req_queue.empty() and
-               len(reqs['req_batch']) < self._BATCH_LIMIT):
-            req = self.req_queue.get()
-            reqs['req_batch'].append(req['req'])
-            reqs['req_info'].append(
-                {
-                    'req_type': req['req_type'],
-                    'req_to': req['req_to'],
-                    'job_id': req['job_id']
-                })
-        return reqs
-
-    def process_responses(self, responses, req_info):
-        """Processes the batch of responses received"""
-        for idx, resp in enumerate(json.loads(responses)):
-            # logging.debug(resp)
-            self.resp_queue.put(
-                {
-                    'req_type': req_info[idx]['req_type'],
-                    'req_to': req_info[idx]['req_to'],
-                    'job_id': req_info[idx]['job_id'],
-                    'resp': json.loads(resp['body'])
-                })
+        batch = []
+        while((not self.mgr.req_queue.empty()) and
+              (len(batch) < self._BATCH_LIMIT)):
+            batch.append(self.mgr.req_queue.get())
+        return batch
 
     @staticmethod
-    def _str_req_types(reqs):
-        return ','.join([req_info['req_type']
-                         for req_info in reqs['req_info']])
+    def batch_list(batch):
+        """
+        Returns a list with all the batch requests
+        """
+        return [r['req'] for r in batch]
+
+    def queue_responses(self, api_response, batch):
+        """
+        Places the received responses from the graph API batch call into
+        the synchronized Queue used to share data between threads
+        """
+        for idx, resp in enumerate(json.loads(api_response)):
+            batch[idx]['resp'] = json.loads(resp['body'])
+            self.mgr.resp_queue.put(batch[idx])
+
+    @staticmethod
+    def _str_req_types(batch):
+        """
+        Returns a string with all the request types sent in
+        the batch (for user information purposes)
+        """
+        return ','.join([r['req_type'] for r in batch])
+
+    def user_info(self, batch):
+        """
+        Displays user information pertaining to the current batch
+        of requests
+        """
+        logging.info('Sending batch with: %d requests of types: %s',
+                     len(batch),
+                     self._str_req_types(batch))
 
     def run(self):
         """
@@ -185,11 +194,8 @@ class RequestIssuer(threading.Thread):
         'to' and 'type' attributes
         """
         while self.mgr.is_scraping():
-            reqs = self.prepare_batch()
-            if reqs['req_batch']:
-                logging.info('Sending batch with: %d requests of types: %s',
-                             len(reqs['req_batch']),
-                             self._str_req_types(reqs))
-                resp_batch = self.graph.data_request(reqs['req_batch'])
-                if resp_batch:
-                    self.process_responses(resp_batch.read(), reqs['req_info'])
+            batch = self.prepare_batch()
+            if batch:
+                self.user_info(batch)
+                api_resp = self.mgr.graph.data_request(self.batch_list(batch))
+                self.queue_responses(api_resp.read(), batch)
