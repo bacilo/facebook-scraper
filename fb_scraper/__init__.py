@@ -131,7 +131,7 @@ class Graph(object):
                 self.str_comments_query(),
                 self.str_sharedposts_query(),
                 self.str_attachments_query())),
-                                          req_type='feed',
+                                          req_type='group_feed',
                                           req_to='',
                                           job_id=job_id)
 

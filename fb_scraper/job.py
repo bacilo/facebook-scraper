@@ -47,7 +47,7 @@ class Job(JobStats):
         """
         Initalizes the Job object
 
-        job_type: 'feed', 'post', 'page'
+        job_type: 'group_feed', 'post', 'page'
         node_id: the id of the node where the scraping starts
         """
         super().__init__()
@@ -70,8 +70,8 @@ class Job(JobStats):
             self._job_type,
             self._node_id)
 
-    def process_feed(self, posts):
-        """ Processes a feed response """
+    def process_group_feed(self, posts):
+        """ Processes a group feed response """
         for post in posts:
             self.writers['posts'].row(post)
             self.process_post(post)
@@ -149,8 +149,8 @@ class Job(JobStats):
         self.find_next_request(data)
         # import ipdb; ipdb.set_trace()
         try:
-            if data['req_type'] == 'feed':
-                self.process_feed(data['resp']['data'])
+            if data['req_type'] == 'group_feed':
+                self.process_group_feed(data['resp']['data'])
             elif data['req_type'] == 'post':
                 self.process_post(data['resp'])
             elif data['req_type'] == 'comments':
@@ -175,8 +175,13 @@ class Job(JobStats):
     def find_next_request(self, data):
         """
         Tries to find the relative url for a next page requests
+
+        TODO:
+            - right now it's only testing for 'group_feed'
+            if limits are indicated for other feeds then those must
+            be included here so the job can terminate
         """
-        if self.abrupt_ending and (data['req_type'] == 'feed'):
+        if self.abrupt_ending and (data['req_type'] == 'group_feed'):
             return
         try:
             # Make this a little tidier by removing hardcoded link
@@ -201,6 +206,26 @@ class Job(JobStats):
             self.job_id, super(Job, self).__str__())
 
 
+class PageJob(Job):
+    """
+    This class implements the specific 'Page scraping job'
+
+    TODO:
+        - metadata
+        - make sure it's getting most fields/attributes
+        - in particular make sure it's getting the side 'ticker'
+        where users post content
+    """
+    def __init__(self, node_id, callback, max_posts):
+        super().__init__('page_feed', node_id, callback)
+        self.max_posts = max_posts
+        self.writers['posts'] = csv_writer.PostWriter(self.job_id)
+        self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
+        self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
+        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
+        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+
+
 class GroupJob(Job):
     """
     This class implements the specific 'Group scraping job'
@@ -210,7 +235,7 @@ class GroupJob(Job):
         https://developers.facebook.com/docs/graph-api/reference/v2.9/group/
     """
     def __init__(self, node_id, callback, max_posts):
-        super().__init__('feed', node_id, callback)
+        super().__init__('group_feed', node_id, callback)
         self.max_posts = max_posts
         self.writers['posts'] = csv_writer.PostWriter(self.job_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)

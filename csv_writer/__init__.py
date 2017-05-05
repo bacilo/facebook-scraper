@@ -65,8 +65,13 @@ class CSVWriter(object):
 
 
 class AttachmentWriter(CSVWriter):
-    """Implementation of a class to write attachments """
+    """
+    Implementation of a class to write attachments
 
+    NOTE:
+        - subattachments not dealt with
+        - description tags should be done better
+    """
     def __init__(self, job_id):
         super().__init__(job_id, 'attachments')
 
@@ -146,29 +151,6 @@ class PostWriter(CSVWriter):
             'updated_time',
             'share_count'
             ))
-
-    # def row(self, data):
-    #     self.write((
-    #         data['id'],
-    #         data['story'].encode('utf-8') if 'story' in data else 'n/a',
-    #         data['created_time'],
-    #         data['message'].encode('utf-8') if 'message' in data
-    #         else 'n/a',
-    #         data['picture'] if 'picture' in data else 'n/a',
-    #         data['caption'].encode('utf-8') if 'caption' in data
-    #         else 'n/a',
-    #         data['description'].encode('utf-8') if 'description' in data
-    #         else 'n/a',
-    #         data['from']['id'],
-    #         data['from']['name'].encode('utf-8'),
-    #         data['name'].encode('utf-8') if 'name' in data else 'n/a',
-    #         data['object_id'] if 'object_id' in data else 'n/a',
-    #         data['parent_id'] if 'parent_id' in data else 'n/a',
-    #         data['source'].encode('utf-8') if 'source' in data else 'n/a',
-    #         data['status_type'] if 'status_type' in data else 'n/a',
-    #         data['type'] if 'type' in data else 'n/a',
-    #         data['updated_time'] if 'updated_time' in data else 'n/a'
-    #         ))
 
     def row(self, data):
         self.write((
