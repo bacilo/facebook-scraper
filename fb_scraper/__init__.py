@@ -24,7 +24,7 @@ class Graph(object):
         "message_tags,name,object_id,parent_id,shares,source,"
         "status_type,type,updated_time,with_tags"
         )
-    FEED_LIMIT = 200
+    FEED_LIMIT = 50
     REACTION_LIMIT = 100
     COMMENT_LIMIT = 50
 
@@ -61,6 +61,16 @@ class Graph(object):
                 "relative_url": "{}".format(rel_url)
                 }
             }
+
+    @staticmethod
+    def str_sharedposts_query():
+        """
+        String for querying sharedposts
+        NOTE:
+        Supposedly we could get the same fields than for any other post
+        Not sure yet what to get from this at this stage...
+        """
+        return 'sharedposts{id,from,to,story,created_time,updated_time}'
 
     @staticmethod
     def str_attachments_query():
@@ -111,7 +121,7 @@ class Graph(object):
         if until:
             until_str = '&until={}'.format(until)
         return self.create_request_object((
-            '{}/feed?limit={}{}{}&fields={},{},{},{}'.format(
+            '{}/feed?limit={}{}{}&fields={},{},{},{},{}'.format(
                 group_id,
                 self.FEED_LIMIT,
                 since_str,
@@ -119,6 +129,7 @@ class Graph(object):
                 self.FEED_FIELDS,
                 self.str_reactions_query(),
                 self.str_comments_query(),
+                self.str_sharedposts_query(),
                 self.str_attachments_query())),
                                           req_type='feed',
                                           req_to='',
@@ -131,10 +142,11 @@ class Graph(object):
         Note: could add limit as well?
         """
         return self.create_request_object((
-            '{}?fields={},{},{}').format(
+            '{}?fields={},{},{},{}').format(
                 post_id,
                 self.str_reactions_query(),
                 self.str_comments_query(),
+                self.str_sharedposts_query(),
                 self.str_attachments_query()),
                                           req_type='post',
                                           req_to='',

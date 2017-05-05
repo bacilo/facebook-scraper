@@ -107,6 +107,7 @@ class Job(JobStats):
         self.check_for_edge('comments', post)
         self.check_for_edge('reactions', post)
         self.check_for_edge('attachments', post)
+        self.check_for_edge('sharedposts', post)
 
     def process_results(self, results):
         """
@@ -158,6 +159,8 @@ class Job(JobStats):
                 self.process_results(data)
             elif data['req_type'] == 'attachments':
                 self.process_results(data)
+            elif data['req_type'] == 'sharedposts':
+                self.process_results(data)
             else:
                 logging.error(
                     'Error in response: %s, type: %s, to: %s (job_id = %s)',
@@ -199,7 +202,13 @@ class Job(JobStats):
 
 
 class GroupJob(Job):
-    """ This class implements the specific 'Group scraping job' """
+    """
+    This class implements the specific 'Group scraping job'
+
+    TODO:
+        - metadata from group:
+        https://developers.facebook.com/docs/graph-api/reference/v2.9/group/
+    """
     def __init__(self, node_id, callback, max_posts):
         super().__init__('feed', node_id, callback)
         self.max_posts = max_posts
@@ -207,6 +216,7 @@ class GroupJob(Job):
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
+        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
 
 
 class PostJob(Job):
@@ -216,3 +226,4 @@ class PostJob(Job):
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
+        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)

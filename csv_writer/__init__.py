@@ -72,7 +72,7 @@ class AttachmentWriter(CSVWriter):
 
     def header(self):
         self.write((
-            'target_id',  # Post or comment containing attachments
+            'to_id',  # Post or comment containing attachments
             'description',
             'description_tags',  # This is a list
             'media',
@@ -105,7 +105,7 @@ class ReactionWriter(CSVWriter):
 
     def header(self):
         self.write((
-            'target_id',
+            'to_id',
             'reaction_type',
             'user_id',
             'user_name'
@@ -143,7 +143,8 @@ class PostWriter(CSVWriter):
             'source',
             'status_type',
             'type',
-            'updated_time'
+            'updated_time',
+            'share_count'
             ))
 
     # def row(self, data):
@@ -189,19 +190,32 @@ class PostWriter(CSVWriter):
             data['source'] if 'source' in data else 'n/a',
             data['status_type'] if 'status_type' in data else 'n/a',
             data['type'] if 'type' in data else 'n/a',
-            data['updated_time'] if 'updated_time' in data else 'n/a'
+            data['updated_time'] if 'updated_time' in data else 'n/a',
+            data['shares']['count'] if 'shares' in data else '0'
             ))
 
 
 class CommentWriter(CSVWriter):
-    """ Implementation of a class to write comments """
+    """
+    Implementation of a class to write comments
+
+    TODO:
+    Fields:
+        - attachment_url
+        - attachment_id
+        - source
+    Options:
+        - Order
+        - Filter
+    https://developers.facebook.com/docs/graph-api/reference/v2.9/object/comments
+    """
 
     def __init__(self, job_id):
         super().__init__(job_id, 'comments')
 
     def header(self):
         self.write((
-            'target_id',
+            'to_id',
             'message',
             'comment_id',
             'user_id',
@@ -224,4 +238,45 @@ class CommentWriter(CSVWriter):
             data['like_count'],
             data['comment_count'] if 'comment_count' in data else 'n/a',
             data['comm_type']  # Must add to dict
+            ))
+
+
+class SharedPostsWriter(CSVWriter):
+    """
+    Implementation of a class to write comments
+
+    TODO:
+        - Still unsure about the fields of this one
+        - 'To' returns an array, I am treating it as an array
+        with a single value and have not yet seen an exception
+        but best keep this in mind
+    """
+
+    def __init__(self, job_id):
+        super().__init__(job_id, 'sharedposts')
+
+    def header(self):
+        self.write((
+            'from_id',
+            'id',
+            'story',
+            'from_id',
+            'from_name',
+            'to_id',
+            'to_name',
+            'created_time',
+            'updated_time'
+            ))
+
+    def row(self, data):
+        self.write((
+            data['to_id'],
+            data['id'],
+            data['story'] if 'story' in data else 'n/a',
+            data['from']['id'],
+            data['from']['name'],
+            data['to']['data'][0]['id'] if 'to' in data else 'n/a',
+            data['to']['data'][0]['name'] if 'to' in data else 'n/a',
+            data['created_time'],
+            data['updated_time']
             ))
