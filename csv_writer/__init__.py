@@ -84,8 +84,8 @@ class AttachmentWriter(CSVWriter):
 
     def row(self, data):  # some might be empty!
         self.write((
-            data['target_id'],  # must be added before
-            data['description'].encode('utf-8') if 'description' in data
+            data['to_id'],  # must be added before
+            data['description'] if 'description' in data
             else 'n/a',
             data['description_tags'] if 'description_tags' in data
             else 'n/a',
@@ -105,7 +105,7 @@ class ReactionWriter(CSVWriter):
 
     def header(self):
         self.write((
-            'post_id',
+            'target_id',
             'reaction_type',
             'user_id',
             'user_name'
@@ -146,24 +146,47 @@ class PostWriter(CSVWriter):
             'updated_time'
             ))
 
+    # def row(self, data):
+    #     self.write((
+    #         data['id'],
+    #         data['story'].encode('utf-8') if 'story' in data else 'n/a',
+    #         data['created_time'],
+    #         data['message'].encode('utf-8') if 'message' in data
+    #         else 'n/a',
+    #         data['picture'] if 'picture' in data else 'n/a',
+    #         data['caption'].encode('utf-8') if 'caption' in data
+    #         else 'n/a',
+    #         data['description'].encode('utf-8') if 'description' in data
+    #         else 'n/a',
+    #         data['from']['id'],
+    #         data['from']['name'].encode('utf-8'),
+    #         data['name'].encode('utf-8') if 'name' in data else 'n/a',
+    #         data['object_id'] if 'object_id' in data else 'n/a',
+    #         data['parent_id'] if 'parent_id' in data else 'n/a',
+    #         data['source'].encode('utf-8') if 'source' in data else 'n/a',
+    #         data['status_type'] if 'status_type' in data else 'n/a',
+    #         data['type'] if 'type' in data else 'n/a',
+    #         data['updated_time'] if 'updated_time' in data else 'n/a'
+    #         ))
+
     def row(self, data):
         self.write((
             data['id'],
-            data['story'].encode('utf-8') if 'story' in data else 'n/a',
+            data['story'] if 'story' in data else 'n/a',
             data['created_time'],
-            data['message'].encode('utf-8') if 'message' in data
+            data['message'] if 'message' in data
             else 'n/a',
             data['picture'] if 'picture' in data else 'n/a',
-            data['caption'].encode('utf-8') if 'caption' in data
+            data['caption'] if 'caption' in data
             else 'n/a',
-            data['description'].encode('utf-8') if 'description' in data
+            data['description'] if 'description' in data
             else 'n/a',
             data['from']['id'],
-            data['from']['name'].encode('utf-8'),
-            data['name'].encode('utf-8') if 'name' in data else 'n/a',
+            data['from']['name'],
+            data['name'] if 'name' in data else 'n/a',
             data['object_id'] if 'object_id' in data else 'n/a',
             data['parent_id'] if 'parent_id' in data else 'n/a',
-            data['source'].encode('utf-8') if 'source' in data else 'n/a',
+            data['source'] if 'source' in data else 'n/a',
             data['status_type'] if 'status_type' in data else 'n/a',
             data['type'] if 'type' in data else 'n/a',
             data['updated_time'] if 'updated_time' in data else 'n/a'
@@ -178,7 +201,7 @@ class CommentWriter(CSVWriter):
 
     def header(self):
         self.write((
-            'post_id',
+            'target_id',
             'message',
             'comment_id',
             'user_id',
@@ -186,13 +209,13 @@ class CommentWriter(CSVWriter):
             'created_time',
             'like_count',
             'comment_count',
-            'sub_comment'
+            'comm_type'
             ))
 
     def row(self, data):
         self.write((
             data['to_id'],  # Must add to dict
-            data['message'].replace('\n', ' ')  # Not utf-8 anymore
+            data['message']  # Not utf-8 anymore
             if 'message' in data else 'n/a',  # Delete '\n' (should it?)
             data['id'],
             data['from']['id'],
@@ -200,5 +223,5 @@ class CommentWriter(CSVWriter):
             data['created_time'],
             data['like_count'],
             data['comment_count'] if 'comment_count' in data else 'n/a',
-            data['sub_comment']  # Must add to dict
+            data['comm_type']  # Must add to dict
             ))

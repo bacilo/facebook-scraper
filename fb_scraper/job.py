@@ -14,15 +14,22 @@ logging.basicConfig(level=logging.DEBUG,
 
 
 class JobStats(object):
+    """
+    This class implements the stats counting methods and should be
+    inherited by the Job classes that seek to use this functionality
+    """
     def __init__(self):
         self.stats = dict()
         self.stats['responses'] = 0
-        self.stats['requests'] = 0
+        self.stats['requests'] = 1  # All jobs start with one request
 
     def inc(self, indicator):
-        """increments a given indicator"""
+        """
+        Increments a given indicator
+        Or creates it at its first apparition
+        """
         if indicator not in self.stats:
-            self.stats[indicator] = 0
+            self.stats[indicator] = 1
         else:
             self.stats[indicator] += 1
 
@@ -44,7 +51,6 @@ class Job(JobStats):
         node_id: the id of the node where the scraping starts
         """
         super().__init__()
-        self.inc('requests')
         self._job_type = job_type
         self._node_id = node_id
         self._timestamp = (str(datetime.datetime.utcnow())
@@ -65,6 +71,7 @@ class Job(JobStats):
             self._node_id)
 
     def process_feed(self, posts):
+        """ Processes a feed response """
         for post in posts:
             self.writers['posts'].row(post)
             self.process_post(post)
@@ -82,51 +89,59 @@ class Job(JobStats):
         data['req_to'] = req_to
         return data
 
+    def check_for_edge(self, edge, parent_edge):
+        """
+        Checks if a given post or comment,... contains
+        edges such as 'reactions' or 'comments' and
+        acts for it
+        """
+        if edge in parent_edge:
+            self.act(self.build_req(
+                resp=parent_edge[edge],
+                req_type=edge,
+                req_to=parent_edge['id']
+                ))
+
     def process_post(self, post):
         """Processes a post received"""
-        if 'comments' in post:
-            self.act(self.build_req(
-                post['comments'],
-                'comment',
-                post['id']))
-        if 'reactions' in post:
-            self.act(self.build_req(
-                post['reactions'],
-                'reaction',
-                post['id']))
-        if 'attachments' in post:
-            for att in post['attachments']['data']:
-                att['target_id'] = post['id']
-                self.writers['attachments'].row(att)
-                self.inc('attachments')
+        self.check_for_edge('comments', post)
+        self.check_for_edge('reactions', post)
+        self.check_for_edge('attachments', post)
+
+    def process_results(self, results):
+        """
+        This method refactors previous methods for dealing with
+        comments, reactions and attachments separately.
+
+        NOTE: Could not integrate 'comments' quite yet given
+        the specificity
+        """
+        for res in results['resp']['data']:
+            res['to_id'] = results['req_to']
+            self.writers[results['req_type']].row(res)
+            self.inc(results['req_type'])
 
     def process_comments(self, comments):
-        """ Processes comments """
+        """ method to process any comments or sub-comments """
         for comment in comments['resp']['data']:
             comment['to_id'] = comments['req_to']
-            comment['sub_comment'] = '0'
+            comment['comm_type'] = self.is_sub_comment(comment)
             self.writers['comments'].row(comment)
-            self.inc('comments')
-            if 'comments' in comment:
-                self.act(self.build_req(
-                    comment['comments'],
-                    'subcomment',
-                    comment['id']))
+            self.check_for_edge('comments', comment)
+            self.check_for_edge('reactions', comment)
 
-    def process_subcomments(self, comments):
-        """ Processes subcomments """
-        for comment in comments['resp']['data']:
-            comment['to_id'] = comments['req_to']
-            comment['sub_comment'] = '1'
-            self.writers['comments'].row(comment)
-            self.inc('sub_comments')
+    def is_sub_comment(self, comment):
+        """
+        Quick and dirty way to check if it's a comment on a post
+        or a comment to a comment (i.e. 'sub_comment')
 
-    def process_reactions(self, reactions):
-        """ Processes reactions """
-        for reaction in reactions['resp']['data']:
-            reaction['to_id'] = reactions['req_to']
-            self.writers['reactions'].row(reaction)
-            self.inc('reactions')
+        Basically a comment to a post will have the post_id as their
+        'to_id' which will contain an underscore '_', whereas a
+        comment to a comment will not
+        """
+        comm_type = 'sub_comm' if '_' not in comment['to_id'] else 'comm'
+        self.inc(comm_type)
+        return comm_type
 
     def act(self, data):
         """ Acts upon received data """
@@ -137,12 +152,12 @@ class Job(JobStats):
                 self.process_feed(data['resp']['data'])
             elif data['req_type'] == 'post':
                 self.process_post(data['resp'])
-            elif data['req_type'] == 'comment':
+            elif data['req_type'] == 'comments':
                 self.process_comments(data)
-            elif data['req_type'] == 'subcomment':
-                self.process_subcomments(data)
-            elif data['req_type'] == 'reaction':
-                self.process_reactions(data)
+            elif data['req_type'] == 'reactions':
+                self.process_results(data)
+            elif data['req_type'] == 'attachments':
+                self.process_results(data)
             else:
                 logging.error(
                     'Error in response: %s, type: %s, to: %s (job_id = %s)',
@@ -158,6 +173,8 @@ class Job(JobStats):
         """
         Tries to find the relative url for a next page requests
         """
+        if self.abrupt_ending and (data['req_type'] == 'feed'):
+            return
         try:
             # Make this a little tidier by removing hardcoded link
             url = data['resp']['paging']['next']
@@ -174,8 +191,7 @@ class Job(JobStats):
 
     def finished(self):
         """ Checks if job has finished scraping """
-        return (self.abrupt_ending or
-                (self.stats['requests'] == self.stats['responses']))
+        return self.stats['requests'] == self.stats['responses']
 
     def __str__(self):
         return 'Job {}, total: {}'.format(

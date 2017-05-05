@@ -24,7 +24,7 @@ class Graph(object):
         "message_tags,name,object_id,parent_id,shares,source,"
         "status_type,type,updated_time,with_tags"
         )
-    FEED_LIMIT = 100
+    FEED_LIMIT = 200
     REACTION_LIMIT = 100
     COMMENT_LIMIT = 50
 
@@ -51,6 +51,7 @@ class Graph(object):
         to: can be used to link certain attributes (like 'reactions')
             to the post they belong
         """
+        # print(rel_url)
         return {
             'req_type': req_type,
             'req_to': req_to,
@@ -72,19 +73,20 @@ class Graph(object):
         return 'reactions.summary(true).limit({}){{id,name,type}}'.format(
             self.REACTION_LIMIT)
 
-    @staticmethod
-    def str_sub_comments_query():
+    def str_sub_comments_query(self):
         """
         String for querying sub-comments
         Note: Limit could be defined for this
         """
-        return 'comments{id,from,message,created_time,like_count}'
+        return ('comments{{id,from,message,created_time,'
+                'like_count,{}}}').format(self.str_reactions_query())
 
     def str_comments_query(self):
         """String for querying comments"""
         return ('comments.summary(true).limit({}){{id,from,message,'
-                'created_time,like_count,comment_count,{}}}').format(
+                'created_time,like_count,comment_count,{},{}}}').format(
                     self.COMMENT_LIMIT,
+                    self.str_reactions_query(),
                     self.str_sub_comments_query())
 
     def create_group_request(
@@ -98,7 +100,7 @@ class Graph(object):
         batch_requests based on page_id
 
         Since/Until fields:
-            Can be empty, or of one the two forms
+            Can be empty, or a str of one the two forms
             YYYY-MM-DD
             YYYY-MM-DDTHH:MM:SS
         """

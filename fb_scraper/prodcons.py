@@ -114,6 +114,7 @@ class ProcessData(threading.Thread):
                     logging.info(self.mgr.jobs[job_id])
                     if self.mgr.jobs[job_id].finished():
                         del self.mgr.jobs[job_id]
+                        logging.info('Job %s has finished!', job_id)
                 if not self.mgr.jobs:
                     self.mgr.stop()
 
@@ -171,6 +172,11 @@ class RequestIssuer(threading.Thread):
                     'resp': json.loads(resp['body'])
                 })
 
+    @staticmethod
+    def _str_req_types(reqs):
+        return ','.join([req_info['req_type']
+                         for req_info in reqs['req_info']])
+
     def run(self):
         """
         Loops until there are some requests on the queue to execute
@@ -181,8 +187,9 @@ class RequestIssuer(threading.Thread):
         while self.mgr.is_scraping():
             reqs = self.prepare_batch()
             if reqs['req_batch']:
-                logging.info('Sending batch with: %d requests',
-                             len(reqs['req_batch']))
+                logging.info('Sending batch with: %d requests of types: %s',
+                             len(reqs['req_batch']),
+                             self._str_req_types(reqs))
                 resp_batch = self.graph.data_request(reqs['req_batch'])
                 if resp_batch:
                     self.process_responses(resp_batch.read(), reqs['req_info'])

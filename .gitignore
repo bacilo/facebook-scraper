@@ -2,9 +2,10 @@
 *.pyc
 __pycache__
 
-# Jupyter notebook files
+# Jupyter notebook files (the instruction one has been tracked already)
 .ipynb_checkpoints
 jupyter.log
+*.ipynb
 
 # Generated files
 output
@@ -12,3 +13,4 @@ output
 # Temporary... will change this
 _old_versions.zip
 scrape.py
+*.zip
