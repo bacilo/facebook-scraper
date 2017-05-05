@@ -145,7 +145,18 @@ class Job(JobStats):
         return comm_type
 
     def act(self, data):
-        """ Acts upon received data """
+        """ 
+        Acts upon received data 
+        This method receives a batch of a certain type of data and acts
+        as a switch to which method will process that type of data.
+
+        Data should be always of a 'req_type'. The 'req_type' should
+        fall onto one of the defined types in the switch form.
+
+        KeyError should also never occur.
+
+        In both cases, logging is done to help ientify the issue
+        """
         self.find_next_request(data)
         # import ipdb; ipdb.set_trace()
         try:
@@ -174,7 +185,12 @@ class Job(JobStats):
 
     def find_next_request(self, data):
         """
-        Tries to find the relative url for a next page requests
+        Tries to find the relative url for a next page requests, which
+        is given usually in the entry 'next', under 'paging'
+
+        This method is independent of whether it pertains to 'comments',
+        'reactions', or any other type of data, since the attributes
+        of the request are merely transfered to the response
 
         TODO:
             - right now it's only testing for 'group_feed'
@@ -184,7 +200,6 @@ class Job(JobStats):
         if self.abrupt_ending and (data['req_type'] == 'group_feed'):
             return
         try:
-            # Make this a little tidier by removing hardcoded link
             url = data['resp']['paging']['next']
             self.callback({
                 'url': url,
@@ -194,7 +209,7 @@ class Job(JobStats):
             })
             self.inc('requests')
         except KeyError:
-            # import ipdb; ipdb.set_trace()
+            # there is no 'next' 'paging' to follow on this dataset
             pass
 
     def finished(self):
@@ -202,6 +217,7 @@ class Job(JobStats):
         return self.stats['requests'] == self.stats['responses']
 
     def __str__(self):
+        """ User friendly string with current status of Job """
         return 'Job {}, total: {}'.format(
             self.job_id, super(Job, self).__str__())
 
