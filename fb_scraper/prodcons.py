@@ -59,6 +59,16 @@ class Manager(object):
                                             since=since,
                                             until=until))
 
+    def scrape_page(self, page_id, since=None, until=None, max_posts=100000):
+        """ Initiates the scraping of a page """
+        job = GroupJob(page_id, self.add_request, max_posts)
+        self.jobs[job.job_id] = job
+        self.req_queue.put(
+            self.graph.create_page_request(page_id=page_id,
+                                           job_id=job.job_id,
+                                           since=since,
+                                           until=until))
+
     def scrape_post(self, post_id):
         """ Initiaties the scraping of a single post """
         job = PostJob(post_id, self.add_request)

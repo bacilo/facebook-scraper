@@ -27,8 +27,8 @@ class Graph(object):
         "message_tags,name,object_id,parent_id,shares,source,"
         "status_type,type,updated_time,with_tags"
         )
-    FEED_LIMIT = 50
-    REACTION_LIMIT = 100
+    FEED_LIMIT = 30
+    REACTION_LIMIT = 50
     COMMENT_LIMIT = 50
 
     def __init__(self, access_token, api_key=None, api_secret=None):
@@ -106,8 +106,8 @@ class Graph(object):
             self,
             group_id,
             job_id,
-            since='',
-            until=''):
+            since=None,
+            until=None):
         """
         Creates a request string for a page to use in
         batch_requests based on page_id
@@ -119,8 +119,12 @@ class Graph(object):
         """
         if since:
             since = '&since={}'.format(since)
+        else:
+            since = ''
         if until:
             until = '&until={}'.format(until)
+        else:
+            until = ''
         return self.create_request_object((
             '{}/feed?limit={}{}{}&fields={},{},{},{},{}'.format(
                 group_id,
@@ -133,6 +137,47 @@ class Graph(object):
                 self.str_sharedposts_query(),
                 self.str_attachments_query())),
                                           req_type='group_feed',
+                                          req_to='',
+                                          job_id=job_id)
+
+    def create_page_request(
+            self,
+            page_id,
+            job_id,
+            since='',
+            until=''):
+        """
+        Creates a request string for a page to use in
+        batch_requests based on page_id
+
+        Since/Until fields:
+            Can be empty, or a str of one the two forms
+            YYYY-MM-DD
+            YYYY-MM-DDTHH:MM:SS
+
+        NOTE: basically the same as 'group_request' at this stage
+        until specifics are added
+        """
+        if since:
+            since = '&since={}'.format(since)
+        else:
+            since = ''
+        if until:
+            until = '&until={}'.format(until)
+        else:
+            until = ''
+        return self.create_request_object((
+            '{}/feed?limit={}{}{}&fields={},{},{},{},{}'.format(
+                page_id,
+                self.FEED_LIMIT,
+                since,
+                until,
+                self.FEED_FIELDS,
+                self.str_reactions_query(),
+                self.str_comments_query(),
+                self.str_sharedposts_query(),
+                self.str_attachments_query())),
+                                          req_type='page_feed',
                                           req_to='',
                                           job_id=job_id)
 

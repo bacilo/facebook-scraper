@@ -8,6 +8,7 @@ when there are multiple ones going on simultaneously
 import datetime
 import logging
 from collections import defaultdict
+import re
 import csv_writer
 
 logging.basicConfig(level=logging.DEBUG,
@@ -72,7 +73,23 @@ class Job(JobStats):
             self._node_id)
 
     def process_group_feed(self, posts):
-        """ Processes a group feed response """
+        """
+        Processes a group feed response
+        """
+        for post in posts:
+            self.writers['posts'].row(post)
+            self.process_post(post)
+            self.inc('posts')
+            if self.stats['posts'] >= self.max_posts:
+                self.abrupt_ending = True
+                return
+
+    def process_page_feed(self, posts):
+        """
+        Processes a page feed response
+        Similar to process_group_feed as not added specifics
+        of pages
+        """
         for post in posts:
             self.writers['posts'].row(post)
             self.process_post(post)
@@ -163,6 +180,8 @@ class Job(JobStats):
         try:
             if data['req_type'] == 'group_feed':
                 self.process_group_feed(data['resp']['data'])
+            elif data['req_type'] == 'page_feed':
+                self.process_page_feed(data['resp']['data'])
             elif data['req_type'] == 'post':
                 self.process_post(data['resp'])
             elif data['req_type'] == 'comments':
@@ -181,8 +200,31 @@ class Job(JobStats):
                     data['req_to'],
                     data['job_id'])
         except KeyError as kerr:
+            # import ipdb; ipdb.set_trace()
             logging.error('KeyError %s:', kerr)
-            logging.error(data)
+            logging.error(data['resp'])
+            self.request_too_large(data)
+
+    def request_too_large(self, data):
+        """
+        Checks if the request was too large
+        To be used in case of error in getting data
+        """
+        ERROR_MESSAGE = "Please reduce the amount of data you're asking"
+        if 'error' in data['resp']:
+            if 'message' in data['resp']['error']:
+                if ERROR_MESSAGE in data['resp']['error']['message']:
+                    logging.info('asking for too much data!')
+                    return True
+        return False
+
+    def change_feed_limit(self, url, factor=0.5):
+        """
+        Changes the limit value for a feed in a request
+        """
+        val = re.split(r'(/feed\?limit=)(\d*)', url)
+        val[2] = int(int(val[2])*factor)
+        return ''.join(val)
 
     def find_next_request(self, data):
         """
@@ -276,6 +318,8 @@ class JobManager(object):
     This classes manages the individual scraping jobs.
     Mainly it allows for joint/combined operations over different jobs
     (like summing their stats for instance)
+
+    NOTE: not being used or properly tested yet!
     """
     def __init__(self):
         self._jobs = []
