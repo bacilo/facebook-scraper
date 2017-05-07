@@ -7,6 +7,7 @@ when there are multiple ones going on simultaneously
 
 import datetime
 import logging
+from collections import defaultdict
 import csv_writer
 
 logging.basicConfig(level=logging.DEBUG,
@@ -145,8 +146,8 @@ class Job(JobStats):
         return comm_type
 
     def act(self, data):
-        """ 
-        Acts upon received data 
+        """
+        Acts upon received data
         This method receives a batch of a certain type of data and acts
         as a switch to which method will process that type of data.
 
@@ -268,3 +269,35 @@ class PostJob(Job):
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
         self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+
+
+class JobManager(object):
+    """
+    This classes manages the individual scraping jobs.
+    Mainly it allows for joint/combined operations over different jobs
+    (like summing their stats for instance)
+    """
+    def __init__(self):
+        self._jobs = []
+        self._maxjobs = 0
+
+    def add_job(self, job):
+        self._jobs.append(job)
+        self._maxjobs += 1
+
+    def total_stats(self):
+        """
+        Calculates a dictionary with the total stats for all the jobs
+        """
+        total_d = defaultdict(int)
+        for job in self._jobs:
+            for key, value in job.iteritems():
+                total_d[key] += value
+        return total_d
+
+    def __str__(self):
+        t_s = self.total_stats()
+        return '{} active jobs; {} finished jobs. INFO: {}'.format(
+            len(self._jobs),
+            self._maxjobs - len(self._jobs),
+            ''.join(['%s %s,' % (value, key) for (key, value) in t_s.items()]))
