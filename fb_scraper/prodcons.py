@@ -126,8 +126,16 @@ class ProcessData(threading.Thread):
         It also increments the stats count for 'responses'
         """
         job_id = response['job_id']
-        self.mgr.jobs[job_id].act(response)
-        self.mgr.jobs[job_id].inc('responses')
+        req = self.mgr.jobs[job_id].act(response)
+        if req:
+            logging.info('resending failed request with lower limit')
+            self.mgr.req_queue.put(self.mgr.graph.create_request_object(
+                rel_url=req['req']['relative_url'],
+                req_type=req['req_type'],
+                req_to=req['req_to'],
+                job_id=req['job_id']))
+        else:
+            self.mgr.jobs[job_id].inc('responses')
 
     def run(self):
         while self.mgr.is_scraping():

@@ -203,28 +203,35 @@ class Job(JobStats):
             # import ipdb; ipdb.set_trace()
             logging.error('KeyError %s:', kerr)
             logging.error(data['resp'])
-            self.request_too_large(data)
+            if self.request_too_large(data):
+                return self.change_feed_limit(data)
 
-    def request_too_large(self, data):
+    @staticmethod
+    def request_too_large(data):
         """
         Checks if the request was too large
         To be used in case of error in getting data
         """
-        ERROR_MESSAGE = "Please reduce the amount of data you're asking"
+        error_msg = "Please reduce the amount of data you're asking"
         if 'error' in data['resp']:
             if 'message' in data['resp']['error']:
-                if ERROR_MESSAGE in data['resp']['error']['message']:
+                if error_msg in data['resp']['error']['message']:
                     logging.info('asking for too much data!')
                     return True
         return False
 
-    def change_feed_limit(self, url, factor=0.5):
+    @staticmethod
+    def change_feed_limit(data, factor=0.5):
         """
         Changes the limit value for a feed in a request
         """
-        val = re.split(r'(/feed\?limit=)(\d*)', url)
-        val[2] = int(int(val[2])*factor)
-        return ''.join(val)
+        val = re.split(r'(/feed\?limit=)(\d*)', data['req']['relative_url'])
+        val[2] = str(int(int(val[2])*factor))
+        if int(val[2]) < 1:  # Make sure limit is not set to 0
+            val[2] = 1
+        # import ipdb; ipdb.set_trace()
+        data['req']['relative_url'] = ''.join(val)
+        return data
 
     def find_next_request(self, data):
         """
