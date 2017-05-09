@@ -8,8 +8,8 @@ when there are multiple ones going on simultaneously
 import datetime
 import logging
 from collections import defaultdict
-import re
 import csv_writer
+from .fs_objects import FSRequestNextPage, FSRequestSub, FSRequestFeed, FSFieldAttachments, FSFieldComments, FSFieldReactions
 
 logging.basicConfig(level=logging.DEBUG,
                     format='(%(threadName)-9s - %(funcName)s): %(message)s',)
@@ -23,7 +23,7 @@ class JobStats(object):
     def __init__(self):
         self.stats = dict()
         self.stats['responses'] = 0
-        self.stats['requests'] = 1  # All jobs start with one request
+        self.stats['requests'] = 0  # All jobs start with one request
 
     def inc(self, indicator):
         """
@@ -45,7 +45,7 @@ class Job(JobStats):
     """
     This class defines the generic scraping effort (or 'job')
     """
-    def __init__(self, job_type, node_id, callback=None):
+    def __init__(self, job_type, node_id):
         """
         Initalizes the Job object
 
@@ -59,10 +59,10 @@ class Job(JobStats):
                            .replace(':', '_')
                            .replace('.', '_')
                            .replace(' ', '_'))
-        self.callback = callback
         self.writers = dict()
         self.abrupt_ending = False
         self.max_posts = 1000000
+        self.new_requests = []
 
     @property
     def job_id(self):
@@ -71,6 +71,18 @@ class Job(JobStats):
             self._timestamp,
             self._job_type,
             self._node_id)
+
+    @property
+    def node_id(self):
+        return self._node_id
+
+    def get_new_requests(self):
+        """ Gets a new request in LIFO fashion """
+        if len(self.new_requests) == 0:
+            return []
+        _reqs = list(self.new_requests)
+        self.new_requests = []
+        return _reqs
 
     def process_group_feed(self, posts):
         """
@@ -101,11 +113,12 @@ class Job(JobStats):
     @staticmethod
     def build_req(resp, req_type, req_to):
         """ Builds the request data structure """
-        data = dict()
-        data['resp'] = resp
-        data['req_type'] = req_type
-        data['req_to'] = req_to
-        return data
+        return FSRequestSub(
+            meta={
+                'req_type': req_type,
+                'req_to': req_to,
+            },
+            resp=resp)
 
     def check_for_edge(self, edge, parent_edge):
         """
@@ -135,15 +148,15 @@ class Job(JobStats):
         NOTE: Could not integrate 'comments' quite yet given
         the specificity
         """
-        for res in results['resp']['data']:
-            res['to_id'] = results['req_to']
-            self.writers[results['req_type']].row(res)
-            self.inc(results['req_type'])
+        for res in results.resp['data']:
+            res['to_id'] = results.req_to
+            self.writers[results.req_type].row(res)
+            self.inc(results.req_type)
 
     def process_comments(self, comments):
         """ method to process any comments or sub-comments """
-        for comment in comments['resp']['data']:
-            comment['to_id'] = comments['req_to']
+        for comment in comments.resp['data']:
+            comment['to_id'] = comments.req_to
             comment['comm_type'] = self.is_sub_comment(comment)
             self.writers['comments'].row(comment)
             self.check_for_edge('comments', comment)
@@ -178,60 +191,32 @@ class Job(JobStats):
         self.find_next_request(data)
         # import ipdb; ipdb.set_trace()
         try:
-            if data['req_type'] == 'group_feed':
-                self.process_group_feed(data['resp']['data'])
-            elif data['req_type'] == 'page_feed':
-                self.process_page_feed(data['resp']['data'])
-            elif data['req_type'] == 'post':
-                self.process_post(data['resp'])
-            elif data['req_type'] == 'comments':
+            if data.req_type == 'group_feed':
+                self.process_group_feed(data.resp['data'])
+            elif data.req_type == 'page_feed':
+                self.process_page_feed(data.resp['data'])
+            elif data.req_type == 'post':
+                self.process_post(data.resp)
+            elif data.req_type == 'comments':
                 self.process_comments(data)
-            elif data['req_type'] == 'reactions':
+            elif data.req_type == 'reactions':
                 self.process_results(data)
-            elif data['req_type'] == 'attachments':
+            elif data.req_type == 'attachments':
                 self.process_results(data)
-            elif data['req_type'] == 'sharedposts':
+            elif data.req_type == 'sharedposts':
                 self.process_results(data)
             else:
                 logging.error(
                     'Error in response: %s, type: %s, to: %s (job_id = %s)',
-                    data['resp'],
-                    data['req_type'],
-                    data['req_to'],
-                    data['job_id'])
+                    data.resp,
+                    data.req_type,
+                    data.req_to,
+                    data.job_id)
         except KeyError as kerr:
             # import ipdb; ipdb.set_trace()
             logging.error('KeyError %s:', kerr)
-            logging.error(data['resp'])
-            if self.request_too_large(data):
-                return self.change_feed_limit(data)
-
-    @staticmethod
-    def request_too_large(data):
-        """
-        Checks if the request was too large
-        To be used in case of error in getting data
-        """
-        error_msg = "Please reduce the amount of data you're asking"
-        if 'error' in data['resp']:
-            if 'message' in data['resp']['error']:
-                if error_msg in data['resp']['error']['message']:
-                    logging.info('asking for too much data!')
-                    return True
-        return False
-
-    @staticmethod
-    def change_feed_limit(data, factor=0.5):
-        """
-        Changes the limit value for a feed in a request
-        """
-        val = re.split(r'(/feed\?limit=)(\d*)', data['req']['relative_url'])
-        val[2] = str(int(int(val[2])*factor))
-        if int(val[2]) < 1:  # Make sure limit is not set to 0
-            val[2] = 1
-        # import ipdb; ipdb.set_trace()
-        data['req']['relative_url'] = ''.join(val)
-        return data
+            logging.error(data.resp)
+            logging.error(data.relative_url)
 
     def find_next_request(self, data):
         """
@@ -247,16 +232,17 @@ class Job(JobStats):
             if limits are indicated for other feeds then those must
             be included here so the job can terminate
         """
-        if self.abrupt_ending and (data['req_type'] == 'group_feed'):
+        if self.abrupt_ending and (data.req_type == 'group_feed'):
             return
         try:
-            url = data['resp']['paging']['next']
-            self.callback({
-                'url': url,
-                'req_type': data['req_type'],
-                'req_to': data['req_to'],
-                'job_id': self.job_id
-            })
+            url = data.resp['paging']['next']
+            self.new_requests.append(FSRequestNextPage(
+                meta={
+                    'req_type': data.req_type,
+                    'req_to': data.req_to,
+                    'job_id': self.job_id
+                },
+                url=url))
             self.inc('requests')
         except KeyError:
             # there is no 'next' 'paging' to follow on this dataset
@@ -282,8 +268,8 @@ class PageJob(Job):
         - in particular make sure it's getting the side 'ticker'
         where users post content
     """
-    def __init__(self, node_id, callback, max_posts):
-        super().__init__('page_feed', node_id, callback)
+    def __init__(self, node_id, max_posts):
+        super().__init__('page_feed', node_id)
         self.max_posts = max_posts
         self.writers['posts'] = csv_writer.PostWriter(self.job_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
@@ -300,8 +286,8 @@ class GroupJob(Job):
         - metadata from group:
         https://developers.facebook.com/docs/graph-api/reference/v2.9/group/
     """
-    def __init__(self, node_id, callback, max_posts):
-        super().__init__('group_feed', node_id, callback)
+    def __init__(self, node_id, max_posts):
+        super().__init__('group_feed', node_id)
         self.max_posts = max_posts
         self.writers['posts'] = csv_writer.PostWriter(self.job_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
@@ -309,11 +295,37 @@ class GroupJob(Job):
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
         self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
 
+    def seed(self):
+        """ Puts first request that launches the job """
+
+        self.inc('requests')
+
+        meta = {
+            'req_type': 'group_feed',
+            'req_to': '',
+            'job_id': self.job_id}
+
+        sub_comms = FSFieldComments(limit=50, sub_fields=[])
+        comms = FSFieldComments(limit=50, sub_fields=[sub_comms])
+        reactions = FSFieldReactions(limit=50, sub_fields=[])
+        attachments = FSFieldAttachments()
+
+        params = {
+            'since': None,
+            'until': None,
+            'node_id': self.node_id,
+            'fs_fields': [comms, reactions, attachments]}
+
+        self.new_requests.append(FSRequestFeed(
+            meta=meta,
+            params=params
+            ))
+
 
 class PostJob(Job):
     """ This class implemepnts the specific 'Post scraping job' """
-    def __init__(self, node_id, callback):
-        super().__init__('post', node_id, callback)
+    def __init__(self, node_id):
+        super().__init__('post', node_id)
         self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
