@@ -9,7 +9,7 @@ import datetime
 import logging
 from collections import defaultdict
 import csv_writer
-from .fs_objects import FSRequestNextPage, FSRequestSub, FSRequestFeed, FSFieldAttachments, FSFieldComments, FSFieldReactions
+import fb_scraper
 
 logging.basicConfig(level=logging.DEBUG,
                     format='(%(threadName)-9s - %(funcName)s): %(message)s',)
@@ -24,6 +24,7 @@ class JobStats(object):
         self.stats = dict()
         self.stats['responses'] = 0
         self.stats['requests'] = 0  # All jobs start with one request
+        self.changed = False
 
     def inc(self, indicator):
         """
@@ -34,9 +35,11 @@ class JobStats(object):
             self.stats[indicator] = 1
         else:
             self.stats[indicator] += 1
+        self.changed = True
 
     def __str__(self):
         """produces a string with all the indicators"""
+        self.changed = False
         return ''.join(
             ['%s %s,' % (value, key) for (key, value) in self.stats.items()])
 
@@ -113,7 +116,7 @@ class Job(JobStats):
     @staticmethod
     def build_req(resp, req_type, req_to):
         """ Builds the request data structure """
-        return FSRequestSub(
+        return fb_scraper.FSRequestSub(
             meta={
                 'req_type': req_type,
                 'req_to': req_to,
@@ -199,11 +202,7 @@ class Job(JobStats):
                 self.process_post(data.resp)
             elif data.req_type == 'comments':
                 self.process_comments(data)
-            elif data.req_type == 'reactions':
-                self.process_results(data)
-            elif data.req_type == 'attachments':
-                self.process_results(data)
-            elif data.req_type == 'sharedposts':
+            elif data.req_type in ['reactions', 'attachments', 'sharedposts']:
                 self.process_results(data)
             else:
                 logging.error(
@@ -232,11 +231,11 @@ class Job(JobStats):
             if limits are indicated for other feeds then those must
             be included here so the job can terminate
         """
-        if self.abrupt_ending and (data.req_type == 'group_feed'):
+        if self.abrupt_ending and ('feed' in data.req_type):
             return
         try:
             url = data.resp['paging']['next']
-            self.new_requests.append(FSRequestNextPage(
+            self.new_requests.append(fb_scraper.FSRequestNextPage(
                 meta={
                     'req_type': data.req_type,
                     'req_to': data.req_to,
@@ -254,11 +253,43 @@ class Job(JobStats):
 
     def __str__(self):
         """ User friendly string with current status of Job """
-        return 'Job {}, total: {}'.format(
-            self.job_id, super(Job, self).__str__())
+        return 'Job {}_{}, total: {}'.format(
+            self._job_type, self.node_id, super(Job, self).__str__())
 
 
-class PageJob(Job):
+class FeedJob(Job):
+    """
+    Abstracts some common aspects of scraping pages and groups and other
+    elements which start by scraping the 'feed'
+    """
+    def __init__(self, job_type, node_id, max_posts, since=None, until=None):
+        super().__init__(job_type, node_id)
+        self.max_posts = max_posts
+        self.writers['posts'] = csv_writer.PostWriter(self.job_id)
+        self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
+        self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
+        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
+        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+        self.seed(since, until)
+
+    def seed(self, since, until):
+        """ Puts first request that launches the job """
+        self.inc('requests')
+        meta = {
+            'req_type': self._job_type,
+            'req_to': '',
+            'job_id': self.job_id}
+        params = {
+            'since': since,
+            'until': until,
+            'node_id': self.node_id,
+            'fs_fields': []}
+        fsf = fb_scraper.FSRequestFeed(meta=meta, params=params)
+        fsf.default()
+        self.new_requests.append(fsf)
+
+
+class PageJob(FeedJob):
     """
     This class implements the specific 'Page scraping job'
 
@@ -268,17 +299,11 @@ class PageJob(Job):
         - in particular make sure it's getting the side 'ticker'
         where users post content
     """
-    def __init__(self, node_id, max_posts):
-        super().__init__('page_feed', node_id)
-        self.max_posts = max_posts
-        self.writers['posts'] = csv_writer.PostWriter(self.job_id)
-        self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
-        self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
-        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
-        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+    def __init__(self, node_id, max_posts, since=None, until=None):
+        super().__init__('page_feed', node_id, max_posts, since, until)
 
 
-class GroupJob(Job):
+class GroupJob(FeedJob):
     """
     This class implements the specific 'Group scraping job'
 
@@ -286,40 +311,8 @@ class GroupJob(Job):
         - metadata from group:
         https://developers.facebook.com/docs/graph-api/reference/v2.9/group/
     """
-    def __init__(self, node_id, max_posts):
-        super().__init__('group_feed', node_id)
-        self.max_posts = max_posts
-        self.writers['posts'] = csv_writer.PostWriter(self.job_id)
-        self.writers['reactions'] = csv_writer.ReactionWriter(self.job_id)
-        self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
-        self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
-        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
-
-    def seed(self):
-        """ Puts first request that launches the job """
-
-        self.inc('requests')
-
-        meta = {
-            'req_type': 'group_feed',
-            'req_to': '',
-            'job_id': self.job_id}
-
-        sub_comms = FSFieldComments(limit=50, sub_fields=[])
-        comms = FSFieldComments(limit=50, sub_fields=[sub_comms])
-        reactions = FSFieldReactions(limit=50, sub_fields=[])
-        attachments = FSFieldAttachments()
-
-        params = {
-            'since': None,
-            'until': None,
-            'node_id': self.node_id,
-            'fs_fields': [comms, reactions, attachments]}
-
-        self.new_requests.append(FSRequestFeed(
-            meta=meta,
-            params=params
-            ))
+    def __init__(self, node_id, max_posts, since=None, until=None):
+        super().__init__('group_feed', node_id, max_posts, since, until)
 
 
 class PostJob(Job):

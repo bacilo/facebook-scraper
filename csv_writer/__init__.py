@@ -201,6 +201,7 @@ class CommentWriter(CSVWriter):
             'user_name',
             'created_time',
             'like_count',
+            'attachment',
             'comment_count',
             'comm_type'
             ))
@@ -215,6 +216,7 @@ class CommentWriter(CSVWriter):
             data['from']['name'],  # Removed utf-8 encoding
             data['created_time'],
             data['like_count'],
+            data['attachment'] if 'attachment' in data else 'n/a',
             data['comment_count'] if 'comment_count' in data else 'n/a',
             data['comm_type']  # Must add to dict
             ))

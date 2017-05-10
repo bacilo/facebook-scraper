@@ -20,6 +20,9 @@ class FSField(object):
     """
     Simple class to define fields
     """
+    REACTION_LIMIT = 50
+    COMMENT_LIMIT = 50
+
     def __init__(self, limit=None):
         self._limit = limit
         self._attribs = []
@@ -65,12 +68,29 @@ class FSFieldComments(FSField):
     """
     Class for comments field
     """
-    FIELD_ATTRIBS = ['id', 'from', 'message', 'created_time', 'like_count']
+    FIELD_ATTRIBS = ['id', 'from', 'message', 'created_time', 'like_count',
+                     'attachment']
 
     def __init__(self, limit, sub_fields):
         super().__init__(limit)
         self._attribs.extend(self.FIELD_ATTRIBS)
         self._sub_fields.extend(sub_fields)
+
+    def default(self):
+        """
+        Loads FSFieldComments with default values (i.e. reactions and
+        subcomments)
+        """
+        comm_reactions = FSFieldReactions(
+            limit=self.REACTION_LIMIT,
+            sub_fields=[])
+        sub_comm_reactions = FSFieldReactions(
+            limit=self.REACTION_LIMIT,
+            sub_fields=[])
+        sub_comms = FSFieldComments(
+            limit=self.COMMENT_LIMIT,
+            sub_fields=[sub_comm_reactions])
+        self._sub_fields.extend([comm_reactions, sub_comms])
 
     def __str__(self):
         return 'comments{}{}{{{}}}'.format(
@@ -142,6 +162,7 @@ class FSRequest(object):
                     "from", "message", "message_tags", "name", "object_id",
                     "parent_id", "shares", "source", "status_type", "type",
                     "updated_time", "with_tags"]
+    FEED_LIMIT = 100
 
     def __init__(self, meta, params, access_token=None):
         self.meta = meta
@@ -149,6 +170,7 @@ class FSRequest(object):
         self._attribs = []
         self.resp = None
         self.access_token = access_token
+        self._limit = self.FEED_LIMIT
 
     def to_batch(self):
         """ Returns dict object for batch requests """
@@ -200,7 +222,50 @@ class FSRequest(object):
     @property
     def fs_fields(self):
         """ Returns all included FSRequests as fields """
-        return ','.join([str(fs_field) for fs_field in self.params['fs_fields']])
+        return ','.join(
+            [str(fs_field) for fs_field in self.params['fs_fields']])
+
+    @property
+    def str_limit(self):
+        """
+        Returns a string denoting the 'limit' attribute, ready for
+        concatenation in the request
+        """
+        return 'limit={}'.format(self._limit)
+
+    @property
+    def limit(self):
+        """ Getter for limit field """
+        return self._limit
+
+    @limit.setter
+    def limit(self, val):
+        self._limit = val
+
+    def correct_request(self):
+        """
+        Should correct a request which was not concluded
+        for instance because too much data was being requested
+        """
+        error_msg = "Please reduce the amount of data you're asking"
+        if 'error' in self.resp:
+            if 'message' in self.resp['error']:
+                if error_msg in self.resp['error']['message']:
+                    self.change_feed_limit()
+                    logging.info(
+                        '{} asking for too much data, reduced to: {}'.format(
+                            self.job_id,
+                            self.limit))
+
+    def change_feed_limit(self, factor=0.5):
+        """
+        Changes the limit value for a feed in a request
+
+        NOTE: for this to work on FSRequestSub or FSRequestNextPage both
+        classes need to be tuned to take in the limit as a value and
+        build relative_url (rather than just having relative_url stored)
+        """
+        self.limit = int(self.limit*factor)
 
     def pre_request(self):
         """
@@ -260,6 +325,23 @@ class FSRequestNextPage(FSRequest):
     @property
     def relative_url(self):
         return self._url.split(self.API_ENDPOINT)[1]
+
+    def change_feed_limit(self, factor=0.5):
+        """
+        Changes the limit value for a feed in a request
+        This is used for this one because it's not properly implemented
+        In the future the idea is to change so the url is parsed into the
+        relevant fields and returned in the relative_url in proper fashion
+        """
+        val = re.split(r'(/feed\?limit=)(\d*)', self.relative_url)
+        import ipdb; ipdb.set_trace()
+        try:
+            val[2] = str(int(int(val[2])*factor))
+            if int(val[2]) < 1:  # Make sure limit is not set to 0
+                val[2] = 1
+        except IndexError as ie:
+            logging.error('could not change limit: %s', ie)
+        self.relative_url = ''.join(val)
 
 
 class FSRequestBatch(FSRequest):
@@ -323,33 +405,8 @@ class FSRequestBatch(FSRequest):
 
     def correct_requests(self):
         """ Corrects all requests so they can be sent again """
-        for idx, req in enumerate(self._batch):
-            self._batch[idx] = self.correct_request(req)
-
-    def correct_request(self, request):
-        """
-        Should correct a request which was not concluded
-        for instance because too much data was being requested
-        """
-        error_msg = "Please reduce the amount of data you're asking"
-        if 'error' in request['resp']:
-            if 'message' in request['resp']['error']:
-                if error_msg in request['resp']['error']['message']:
-                    logging.info('asking for too much data, gonna reduce')
-                    request = self.change_feed_limit(request)
-
-    @staticmethod
-    def change_feed_limit(request, factor=0.5):
-        """
-        Changes the limit value for a feed in a request
-        """
-        val = re.split(r'(/feed\?limit=)(\d*)', request['req']['relative_url'])
-        val[2] = str(int(int(val[2])*factor))
-        if int(val[2]) < 1:  # Make sure limit is not set to 0
-            val[2] = 1
-        # import ipdb; ipdb.set_trace()
-        request['req']['relative_url'] = ''.join(val)
-        return request
+        for idx, fsr in enumerate(self._batch):
+            self._batch[idx].correct_request()
 
     def completed_requests(self):
         """
@@ -357,9 +414,11 @@ class FSRequestBatch(FSRequest):
         """
         _done = []
         for idx, fsr in enumerate(self._batch):
-            # check if it has successfully completed (or needs to be resent)
-            _done.append(fsr)
-            self._batch.pop(idx)
+            if 'error' not in fsr.resp:
+                _done.append(fsr)
+                self._batch.pop(idx)
+        self.correct_requests()
+        # import ipdb; ipdb.set_trace()
         return _done
 
     def _str_types(self):
@@ -445,10 +504,6 @@ class FSRequestFeed(FSRequest):
             - 'node_id': the node for which to get the feed from
             - 'fs_fields': list with FSFields to consider
     """
-    FEED_LIMIT = 100
-    REACTION_LIMIT = 50
-    COMMENT_LIMIT = 50
-
     def __init__(self, meta, params):
         super().__init__(meta=meta, params=params)
         self._attribs.extend(self.POST_ATTRIBS)
@@ -471,19 +526,28 @@ class FSRequestFeed(FSRequest):
         return '&until={}'.format(
             self.params['until']) if self.params['until'] else ''
 
-    @property
-    def limit(self):
+    def default(self):
         """
-        Returns a string denoting the 'limit' attribute, ready for
-        concatenation in the request
+        Initializes feed with 'default' FSFields (i.e. comments, subcomments,
+        reactions, attachments, sharedposts)
         """
-        return 'limit={}'.format(self.FEED_LIMIT)
+        comms = FSFieldComments(
+            limit=FSField.COMMENT_LIMIT,
+            sub_fields=[])
+        comms.default()
+        reactions = FSFieldReactions(
+            limit=FSField.REACTION_LIMIT,
+            sub_fields=[])
+        attachments = FSFieldAttachments()
+        sharedposts = FSFieldSharedPosts()
+        self.params['fs_fields'].extend(
+            [comms, reactions, attachments, sharedposts])
 
     @property
     def relative_url(self):
         return '{}/feed?{}{}{}{}'.format(
             self.node_id,
-            self.limit,
+            self.str_limit,
             self.since,
             self.until,
             self.fields)
