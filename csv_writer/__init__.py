@@ -147,7 +147,7 @@ class PostWriter(CSVWriter):
             'status_type',
             'type',
             'updated_time',
-            'share_count'
+            'shares_count'
             ))
 
     def row(self, data):
@@ -187,7 +187,8 @@ class CommentWriter(CSVWriter):
     Options:
         - Order
         - Filter
-    https://developers.facebook.com/docs/graph-api/reference/v2.9/object/comments
+    https://developers.facebook.com/docs/
+        graph-api/reference/v2.9/object/comments
     """
     def __init__(self, job_id):
         super().__init__(job_id, 'comments')
@@ -237,7 +238,7 @@ class SharedPostsWriter(CSVWriter):
 
     def header(self):
         self.write((
-            'from_id',
+            'origin_id',
             'id',
             'story',
             'from_id',
