@@ -136,6 +136,19 @@ class Job(JobStats):
                 req_to=parent_edge['id']
                 ))
 
+    def is_sub_comment(self, comment):
+        """
+        Quick and dirty way to check if it's a comment on a post
+        or a comment to a comment (i.e. 'sub_comment')
+
+        Basically a comment to a post will have the post_id as their
+        'to_id' which will contain an underscore '_', whereas a
+        comment to a comment will not
+        """
+        comm_type = 'sub_comm' if '_' not in comment['to_id'] else 'comm'
+        self.inc(comm_type)
+        return comm_type
+
     def process_post(self, post):
         """Processes a post received"""
         self.check_for_edge('comments', post)
@@ -164,19 +177,6 @@ class Job(JobStats):
             self.writers['comments'].row(comment)
             self.check_for_edge('comments', comment)
             self.check_for_edge('reactions', comment)
-
-    def is_sub_comment(self, comment):
-        """
-        Quick and dirty way to check if it's a comment on a post
-        or a comment to a comment (i.e. 'sub_comment')
-
-        Basically a comment to a post will have the post_id as their
-        'to_id' which will contain an underscore '_', whereas a
-        comment to a comment will not
-        """
-        comm_type = 'sub_comm' if '_' not in comment['to_id'] else 'comm'
-        self.inc(comm_type)
-        return comm_type
 
     def act(self, data):
         """

@@ -333,8 +333,8 @@ class FSRequestNextPage(FSRequest):
         In the future the idea is to change so the url is parsed into the
         relevant fields and returned in the relative_url in proper fashion
         """
-        val = re.split(r'(/feed\?limit=)(\d*)', self.relative_url)
-        import ipdb; ipdb.set_trace()
+        val = re.split(r'(limit=)(\d*)', self.relative_url)
+        # import ipdb; ipdb.set_trace()
         try:
             val[2] = str(int(int(val[2])*factor))
             if int(val[2]) < 1:  # Make sure limit is not set to 0
