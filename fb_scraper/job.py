@@ -7,7 +7,7 @@ when there are multiple ones going on simultaneously
 
 import datetime
 import logging
-from collections import defaultdict
+# from collections import defaultdict
 import csv_writer
 import fb_scraper
 
@@ -87,43 +87,12 @@ class Job(JobStats):
         self.new_requests = []
         return _reqs
 
-    def process_group_feed(self, posts):
-        """
-        Processes a group feed response
-        """
-        for post in posts:
-            self.writers['posts'].row(post)
-            self.process_post(post)
-            self.inc('posts')
-            if self.stats['posts'] >= self.max_posts:
-                self.abrupt_ending = True
-                return
-
-    def process_page_feed(self, posts):
-        """
-        Processes a page feed response
-        Similar to process_group_feed as not added specifics
-        of pages
-        """
-        for post in posts:
-            self.writers['posts'].row(post)
-            self.process_post(post)
-            self.inc('posts')
-            if self.stats['posts'] >= self.max_posts:
-                self.abrupt_ending = True
-                return
-
     @staticmethod
-    def build_req(resp, req_type, req_to):
+    def build_req(resp, meta, params):
         """ Builds the request data structure """
-        return fb_scraper.FSRequestSub(
-            meta={
-                'req_type': req_type,
-                'req_to': req_to,
-            },
-            resp=resp)
+        return fb_scraper.FSRequestSub(meta=meta, params=params, resp=resp)
 
-    def check_for_edge(self, edge, parent_edge):
+    def check_for_edge(self, edge, parent_edge, params, meta):
         """
         Checks if a given post or comment,... contains
         edges such as 'reactions' or 'comments' and
@@ -132,9 +101,24 @@ class Job(JobStats):
         if edge in parent_edge:
             self.act(self.build_req(
                 resp=parent_edge[edge],
-                req_type=edge,
-                req_to=parent_edge['id']
+                meta={
+                    'req_type': edge,
+                    'req_to': parent_edge['id'],
+                    'job_id': meta['job_id']},
+                params=params
                 ))
+            return True
+        return False
+
+    def act(self, data):
+        """
+        Abstract method for others to inherit, determines how the data
+        scraped is to be treated
+        """
+        raise NotImplementedError
+
+    def seed(self):
+        raise NotImplementedError
 
     def is_sub_comment(self, comment):
         """
@@ -148,74 +132,6 @@ class Job(JobStats):
         comm_type = 'sub_comm' if '_' not in comment['to_id'] else 'comm'
         self.inc(comm_type)
         return comm_type
-
-    def process_post(self, post):
-        """Processes a post received"""
-        self.check_for_edge('comments', post)
-        self.check_for_edge('reactions', post)
-        self.check_for_edge('attachments', post)
-        self.check_for_edge('sharedposts', post)
-
-    def process_results(self, results):
-        """
-        This method refactors previous methods for dealing with
-        comments, reactions and attachments separately.
-
-        NOTE: Could not integrate 'comments' quite yet given
-        the specificity
-        """
-        for res in results.resp['data']:
-            res['to_id'] = results.req_to
-            self.writers[results.req_type].row(res)
-            self.inc(results.req_type)
-
-    def process_comments(self, comments):
-        """ method to process any comments or sub-comments """
-        for comment in comments.resp['data']:
-            comment['to_id'] = comments.req_to
-            comment['comm_type'] = self.is_sub_comment(comment)
-            self.writers['comments'].row(comment)
-            self.check_for_edge('comments', comment)
-            self.check_for_edge('reactions', comment)
-
-    def act(self, data):
-        """
-        Acts upon received data
-        This method receives a batch of a certain type of data and acts
-        as a switch to which method will process that type of data.
-
-        Data should be always of a 'req_type'. The 'req_type' should
-        fall onto one of the defined types in the switch form.
-
-        KeyError should also never occur.
-
-        In both cases, logging is done to help ientify the issue
-        """
-        self.find_next_request(data)
-        # import ipdb; ipdb.set_trace()
-        try:
-            if data.req_type == 'group_feed':
-                self.process_group_feed(data.resp['data'])
-            elif data.req_type == 'page_feed':
-                self.process_page_feed(data.resp['data'])
-            elif data.req_type == 'post':
-                self.process_post(data.resp)
-            elif data.req_type == 'comments':
-                self.process_comments(data)
-            elif data.req_type in ['reactions', 'attachments', 'sharedposts']:
-                self.process_results(data)
-            else:
-                logging.error(
-                    'Error in response: %s, type: %s, to: %s (job_id = %s)',
-                    data.resp,
-                    data.req_type,
-                    data.req_to,
-                    data.job_id)
-        except KeyError as kerr:
-            # import ipdb; ipdb.set_trace()
-            logging.error('KeyError %s:', kerr)
-            logging.error(data.resp)
-            logging.error(data.relative_url)
 
     def find_next_request(self, data):
         """
@@ -241,10 +157,17 @@ class Job(JobStats):
                     'req_to': data.req_to,
                     'job_id': self.job_id
                 },
+                params=data.params,
                 url=url))
             self.inc('requests')
         except KeyError:
             # there is no 'next' 'paging' to follow on this dataset
+            pass
+        except TypeError:
+            # Careful with this one, but basically some attributes like
+            # 'parent_id' are being treated this way for getting the Graph
+            # This means that this is also not an issue, but still to be
+            # fully tested
             pass
 
     def finished(self):
@@ -270,9 +193,11 @@ class FeedJob(Job):
         self.writers['comments'] = csv_writer.CommentWriter(self.job_id)
         self.writers['attachments'] = csv_writer.AttachmentWriter(self.job_id)
         self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+        self.since = since
+        self.until = until
         self.seed(since, until)
 
-    def seed(self, since, until):
+    def seed(self):
         """ Puts first request that launches the job """
         self.inc('requests')
         meta = {
@@ -280,12 +205,279 @@ class FeedJob(Job):
             'req_to': '',
             'job_id': self.job_id}
         params = {
-            'since': since,
-            'until': until,
+            'since': self.since,
+            'until': self.until,
             'node_id': self.node_id,
             'fs_fields': []}
         fsf = fb_scraper.FSRequestFeed(meta=meta, params=params)
         fsf.default()
+        self.new_requests.append(fsf)
+
+    def process_group_feed(self, posts, params, meta):
+        """
+        Processes a group feed response
+        """
+        for post in posts:
+            self.writers['posts'].row(post)
+            self.process_post(post, params=params, meta=meta)
+            self.inc('posts')
+            if self.stats['posts'] >= self.max_posts:
+                self.abrupt_ending = True
+                return
+
+    def process_page_feed(self, posts, params, meta):
+        """
+        Processes a page feed response
+        Similar to process_group_feed as not added specifics
+        of pages
+        """
+        for post in posts:
+            self.writers['posts'].row(post)
+            self.process_post(post, params=params, meta=meta)
+            self.inc('posts')
+            if self.stats['posts'] >= self.max_posts:
+                self.abrupt_ending = True
+                return
+
+    def process_post(self, post, params, meta):
+        """Processes a post received"""
+        self.check_for_edge('comments', post, params, meta)
+        self.check_for_edge('reactions', post, params, meta)
+        self.check_for_edge('attachments', post, params, meta)
+        self.check_for_edge('sharedposts', post, params, meta)
+
+    def process_results(self, results):
+        """
+        This method refactors previous methods for dealing with
+        comments, reactions and attachments separately.
+
+        NOTE: Could not integrate 'comments' quite yet given
+        the specificity
+        """
+        for res in results.resp['data']:
+            res['to_id'] = results.req_to
+            self.writers[results.req_type].row(res)
+            self.inc(results.req_type)
+
+    def process_comments(self, comments, params, meta):
+        """ method to process any comments or sub-comments """
+        for comment in comments.resp['data']:
+            comment['to_id'] = comments.req_to
+            comment['comm_type'] = self.is_sub_comment(comment)
+            self.writers['comments'].row(comment)
+            self.check_for_edge('comments', comment, params, meta)
+            self.check_for_edge('reactions', comment, params, meta)
+
+    def act(self, data):
+        """
+        Acts upon received data
+        This method receives a batch of a certain type of data and acts
+        as a switch to which method will process that type of data.
+
+        Data should be always of a 'req_type'. The 'req_type' should
+        fall onto one of the defined types in the switch form.
+
+        KeyError should also never occur.
+
+        In both cases, logging is done to help ientify the issue
+        """
+        self.find_next_request(data)
+        # import ipdb; ipdb.set_trace()
+        try:
+            if data.req_type == 'group_feed':
+                self.process_group_feed(
+                    data.resp['data'], meta=data.meta, params=data.params)
+            elif data.req_type == 'page_feed':
+                self.process_page_feed(
+                    data.resp['data'], meta=data.meta, params=data.params)
+            elif data.req_type == 'post':
+                self.process_post(
+                    data.resp, meta=data.meta, params=data.params)
+            elif data.req_type == 'comments':
+                self.process_comments(
+                    data, meta=data.meta, params=data.params)
+            elif data.req_type in ['reactions', 'attachments', 'sharedposts']:
+                self.process_results(data)
+            else:
+                logging.error(
+                    'Error in response: %s, type: %s, to: %s (job_id = %s)',
+                    data.resp,
+                    data.req_type,
+                    data.req_to,
+                    data.job_id)
+        except KeyError as kerr:
+            # import ipdb; ipdb.set_trace()
+            logging.error('KeyError %s:', kerr)
+            logging.error(data.resp)
+            logging.error(data.relative_url)
+
+
+class GraphFromPageJob(Job):
+    """
+    This class implements a Job whose goal is to find which pages
+    are connected to which other pages via their 'sharedposts',
+    'attachments' and 'parent_id' fields on their posts
+
+    Parameters:
+    - levels: the number of levels to go away from the original page
+    (i.e. 1, only those directed connected and 2, those connected
+    to the original page plus those obtained from 1)
+    """
+    def __init__(self, node_id, max_levels, max_posts, since=None, until=None):
+        super().__init__('graph_from_page', node_id)
+        self.max_posts = max_posts
+        self.max_levels = max_levels
+        self.writers['pages'] = csv_writer.PageWriter(self.job_id)
+        self.writers['posts'] = csv_writer.PostWriter(self.job_id)
+        self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
+        self.since = since
+        self.until = until
+        self.groups_scraped = [node_id]
+        self.seed()
+
+    def seed(self):
+        self.inc('requests')
+        meta = {
+            'req_type': self._job_type,
+            'req_to': '',
+            'job_id': self.job_id}
+        params = {
+            'since': self.since,
+            'until': self.until,
+            'node_id': self.node_id,
+            'level': 0,
+            'fs_fields': []}
+        fsf = fb_scraper.FSRequestFeed(meta=meta, params=params)
+        fsf.share_graph()
+        self.new_requests.append(fsf)
+
+    def act(self, data):
+        """
+        Acts upon received data
+        This method receives a batch of a certain type of data and acts
+        as a switch to which method will process that type of data.
+
+        Data should be always of a 'req_type'. The 'req_type' should
+        fall onto one of the defined types in the switch form.
+
+        KeyError should also never occur.
+
+        In both cases, logging is done to help ientify the issue
+        """
+        self.find_next_request(data)
+        # import ipdb; ipdb.set_trace()
+        try:
+            if data.req_type == 'graph_from_page':
+                self.process_page_feed(
+                    data.resp['data'], meta=data.meta, params=data.params)
+            elif data.req_type == 'parent_id':
+                self.process_parent_id(data)
+            elif data.req_type == 'sharedposts':
+                self.process_sharedposts(data)
+            else:
+                logging.error(
+                    'Error in response: %s, type: %s, to: %s (job_id = %s)',
+                    data.resp,
+                    data.req_type,
+                    data.req_to,
+                    data.job_id)
+        except KeyError as kerr:
+            # import ipdb; ipdb.set_trace()
+            logging.error('KeyError %s:', kerr)
+            logging.error(data.resp)
+            logging.error(data.relative_url)
+
+    def process_page_feed(self, posts, meta, params):
+        """
+        Processes a page feed response
+        Similar to process_group_feed as not added specifics
+        of pages
+        """
+        for post in posts:
+            if self.process_post(post, params=params, meta=meta):
+                self.writers['posts'].row(post)
+                self.inc('relevant_posts')
+            self.inc('all_posts')
+            if self.stats['all_posts'] >= self.max_posts:
+                self.abrupt_ending = True
+                return
+
+    def process_post(self, post, meta, params):
+        """Processes a post received"""
+        return (
+            self.check_for_edge(
+                'sharedposts', post, params=params, meta=meta) or
+            self.check_for_edge(
+                'parent_id', post, params=params, meta=meta))
+
+    def process_sharedposts(self, results):
+        """
+        This method refactors previous methods for dealing with
+        comments, reactions and attachments separately.
+
+        NOTE: Could not integrate 'comments' quite yet given
+        the specificity
+        """
+        for res in results.resp['data']:
+            res['to_id'] = results.req_to
+            self.writers[results.req_type].row(res)
+            self.inc(results.req_type)
+            if results.params['level'] >= self.max_levels:
+                return
+            meta = {
+                'req_type': self._job_type,
+                'req_to': '',
+                'job_id': self.job_id}
+            # import ipdb; ipdb.set_trace()
+            params = {
+                'since': results.params['since'],
+                'until': results.params['until'],
+                'node_id': res['from']['id'],
+                'fs_fields': [],
+                'level': results.params['level'] + 1}
+            if params['node_id'] in self.groups_scraped:
+                return
+            self.groups_scraped.append(params['node_id'])
+            self.inc('requests')
+            logging.info("sharedposts: %s, from post %s, in job %s (level %s)",
+                         params['node_id'],
+                         results.meta['req_to'],
+                         meta['job_id'],
+                         params['level'])
+            fsf = fb_scraper.FSRequestFeed(meta=meta, params=params)
+            fsf.share_graph()
+            self.new_requests.append(fsf)
+
+    def process_parent_id(self, results):
+        """
+        Goes upstream once a parent_id is found on a post
+        """
+        # import ipdb; ipdb.set_trace()
+        if results.params['level'] >= self.max_levels:
+            return
+        meta = {
+            'req_type': self._job_type,
+            'req_to': '',
+            'job_id': self.job_id}
+        # import ipdb; ipdb.set_trace()
+        params = {
+            'since': results.params['since'],
+            'until': results.params['until'],
+            'node_id': results.resp.split('_')[0],
+            'fs_fields': [],
+            'level': results.params['level'] + 1}
+        if params['node_id'] in self.groups_scraped:
+            return
+        self.groups_scraped.append(params['node_id'])
+        self.inc('requests')
+        self.inc('parent_id')
+        logging.info("found parent: %s, from post %s, in job %s (level %s)",
+                     params['node_id'],
+                     results.meta['req_to'],
+                     meta['job_id'],
+                     params['level'])
+        fsf = fb_scraper.FSRequestFeed(meta=meta, params=params)
+        fsf.share_graph()
         self.new_requests.append(fsf)
 
 
@@ -325,35 +517,36 @@ class PostJob(Job):
         self.writers['sharedposts'] = csv_writer.SharedPostsWriter(self.job_id)
 
 
-class JobManager(object):
-    """
-    This classes manages the individual scraping jobs.
-    Mainly it allows for joint/combined operations over different jobs
-    (like summing their stats for instance)
+# class JobManager(object):
+#     """
+#     This classes manages the individual scraping jobs.
+#     Mainly it allows for joint/combined operations over different jobs
+#     (like summing their stats for instance)
 
-    NOTE: not being used or properly tested yet!
-    """
-    def __init__(self):
-        self._jobs = []
-        self._maxjobs = 0
+#     NOTE: not being used or properly tested yet!
+#     """
+#     def __init__(self):
+#         self._jobs = []
+#         self._maxjobs = 0
 
-    def add_job(self, job):
-        self._jobs.append(job)
-        self._maxjobs += 1
+#     def add_job(self, job):
+#         self._jobs.append(job)
+#         self._maxjobs += 1
 
-    def total_stats(self):
-        """
-        Calculates a dictionary with the total stats for all the jobs
-        """
-        total_d = defaultdict(int)
-        for job in self._jobs:
-            for key, value in job.iteritems():
-                total_d[key] += value
-        return total_d
+#     def total_stats(self):
+#         """
+#         Calculates a dictionary with the total stats for all the jobs
+#         """
+#         total_d = defaultdict(int)
+#         for job in self._jobs:
+#             for key, value in job.iteritems():
+#                 total_d[key] += value
+#         return total_d
 
-    def __str__(self):
-        t_s = self.total_stats()
-        return '{} active jobs; {} finished jobs. INFO: {}'.format(
-            len(self._jobs),
-            self._maxjobs - len(self._jobs),
-            ''.join(['%s %s,' % (value, key) for (key, value) in t_s.items()]))
+#     def __str__(self):
+#         t_s = self.total_stats()
+#         return '{} active jobs; {} finished jobs. INFO: {}'.format(
+#             len(self._jobs),
+#             self._maxjobs - len(self._jobs),
+#             ''.join(
+#               ['%s %s,' % (value, key) for (key, value) in t_s.items()]))

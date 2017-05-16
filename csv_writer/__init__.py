@@ -124,6 +124,24 @@ class ReactionWriter(CSVWriter):
             ))
 
 
+class PageWriter(CSVWriter):
+    """ Implementation of a class to write reactions """
+    def __init__(self, job_id):
+        super().__init__(job_id, 'pages')
+
+    def header(self):
+        self.write((
+            'id',
+            'name'
+            ))
+
+    def row(self, data):
+        self.write((
+            data['id'],
+            data['name']
+            ))
+
+
 class PostWriter(CSVWriter):
     """ Implementation of a class to write posts """
     def __init__(self, job_id):
@@ -145,6 +163,7 @@ class PostWriter(CSVWriter):
             'parent_id',
             'source',
             'status_type',
+            'link',
             'type',
             'updated_time',
             'shares_count'
@@ -169,6 +188,7 @@ class PostWriter(CSVWriter):
             data['parent_id'] if 'parent_id' in data else 'n/a',
             data['source'] if 'source' in data else 'n/a',
             data['status_type'] if 'status_type' in data else 'n/a',
+            data['link'] if 'link' in data else 'n/a',
             data['type'] if 'type' in data else 'n/a',
             data['updated_time'] if 'updated_time' in data else 'n/a',
             data['shares']['count'] if 'shares' in data else '0'

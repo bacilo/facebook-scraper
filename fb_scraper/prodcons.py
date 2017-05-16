@@ -19,7 +19,7 @@ class Manager(object):
     """
     This class is responsible for managing the producer/consummer threads
     """
-    _QUEUE_BUF_SIZE = 5000
+    _QUEUE_BUF_SIZE = 50000
 
     def __init__(self, credentials):
         """
@@ -30,7 +30,7 @@ class Manager(object):
         self.resp_queue = queue.Queue(self._QUEUE_BUF_SIZE)
         self.credentials = credentials
         self.proc_data = ProcessData(parent=self)
-        self.req_issuer = RequestIssuer(parent=self)
+        self.req_issuer = [RequestIssuer(parent=self) for i in range(5)]
         self.jobs = dict()
         self._isscraping = True
 
@@ -49,8 +49,9 @@ class Manager(object):
 
     def start(self):
         """Starts the threads"""
-        self.req_issuer.start()
-        time.sleep(2)
+        for ri in self.req_issuer:
+            ri.start()
+            time.sleep(2)
         self.proc_data.start()
         time.sleep(2)
 
@@ -149,6 +150,14 @@ class RequestIssuer(threading.Thread):
         fs_batch = FSRequestBatch(self.mgr.credentials['access_token'])
         while self.mgr.is_scraping():
             fs_batch = self.prepare_batch(fs_batch)
+            if len(fs_batch._batch) != 0:
+                logging.info('About to send %s requests', len(fs_batch._batch))
             fs_batch.request()
+            i = 0
             for fsr in fs_batch.completed_requests():
                 self.mgr.resp_queue.put(fsr)
+                self.mgr.jobs[fsr.job_id].inc('responses_queued')
+                i += 1
+            if i != 0:
+                logging.info('queued %s responses received', i)
+            time.sleep(1)

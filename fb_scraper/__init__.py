@@ -158,10 +158,17 @@ class FSRequest(object):
     This class wraps the object used as a request object
     """
     API_ENDPOINT = 'https://graph.facebook.com/v2.9/'
-    POST_ATTRIBS = ["id", "created_time", "picture", "caption", "description",
-                    "from", "message", "message_tags", "name", "object_id",
-                    "parent_id", "shares", "source", "status_type", "type",
-                    "updated_time", "with_tags"]
+    POST_ATTRIBS = {
+        # message_tags!!
+        'all': ["id", "created_time", "picture", "caption", "description",
+                "from", "message", "message_tags", "name", "object_id",
+                "parent_id", "shares", "source", "status_type", "type",
+                "updated_time", "with_tags", "link"],
+        'feed': ["id", "created_time", "caption", "description", "from",
+                 "message", "name", "parent_id", "shares", "link",
+                 "status_type", "updated_time"],
+        'graph': ["id", "created_time", "from", "parent_id", "shares",
+                  "link", "updated_time", "name"]}
     FEED_LIMIT = 100
 
     def __init__(self, meta, params, access_token=None):
@@ -308,8 +315,8 @@ class FSRequestSub(FSRequest):
     (i.e. to keep the 'comments' or 'reactions' that are in the response
     for a post, for instance)
     """
-    def __init__(self, meta, resp):
-        super().__init__(meta=meta, params=None)
+    def __init__(self, meta, params, resp):
+        super().__init__(meta=meta, params=params)
         self.resp = resp
 
 
@@ -318,8 +325,8 @@ class FSRequestNextPage(FSRequest):
     This class implements a simple wrapper for a next page request
     that can be of comments, reactions, posts,...
     """
-    def __init__(self, meta, url):
-        super().__init__(meta=meta, params=None)
+    def __init__(self, meta, params, url):
+        super().__init__(meta=meta, params=params)
         self._url = url
 
     @property
@@ -417,6 +424,8 @@ class FSRequestBatch(FSRequest):
             if 'error' not in fsr.resp:
                 _done.append(fsr)
                 self._batch.pop(idx)
+            else:
+                logging.error(fsr.resp)
         self.correct_requests()
         # import ipdb; ipdb.set_trace()
         return _done
@@ -478,7 +487,7 @@ class FSRequestPost(FSRequest):
     """
     def __init__(self, meta, params):
         super().__init__(meta=meta, params=params)
-        self._attribs.extend(self.POST_ATTRIBS)
+        self._attribs.extend(self.POST_ATTRIBS['all'])
 
     @property
     def relative_url(self):
@@ -506,7 +515,7 @@ class FSRequestFeed(FSRequest):
     """
     def __init__(self, meta, params):
         super().__init__(meta=meta, params=params)
-        self._attribs.extend(self.POST_ATTRIBS)
+        self._attribs.extend(self.POST_ATTRIBS['all'])
 
     @property
     def since(self):
@@ -542,6 +551,10 @@ class FSRequestFeed(FSRequest):
         sharedposts = FSFieldSharedPosts()
         self.params['fs_fields'].extend(
             [comms, reactions, attachments, sharedposts])
+
+    def share_graph(self):
+        sharedposts = FSFieldSharedPosts()
+        self.params['fs_fields'].extend([sharedposts])
 
     @property
     def relative_url(self):
