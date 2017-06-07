@@ -7,8 +7,9 @@ __pycache__
 jupyter.log
 *.ipynb
 
-# Generated files
+# Generated files and previous work files
 output
+_old_vers
 
 # Temporary... will change this
 _old_versions.zip
