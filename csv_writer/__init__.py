@@ -124,6 +124,24 @@ class ReactionWriter(CSVWriter):
             ))
 
 
+class PageWriter(CSVWriter):
+    """ Implementation of a class to write reactions """
+    def __init__(self, job_id):
+        super().__init__(job_id, 'pages')
+
+    def header(self):
+        self.write((
+            'id',
+            'name'
+            ))
+
+    def row(self, data):
+        self.write((
+            data['id'],
+            data['name']
+            ))
+
+
 class PostWriter(CSVWriter):
     """ Implementation of a class to write posts """
     def __init__(self, job_id):
@@ -145,9 +163,10 @@ class PostWriter(CSVWriter):
             'parent_id',
             'source',
             'status_type',
+            'link',
             'type',
             'updated_time',
-            'share_count'
+            'shares_count'
             ))
 
     def row(self, data):
@@ -169,6 +188,7 @@ class PostWriter(CSVWriter):
             data['parent_id'] if 'parent_id' in data else 'n/a',
             data['source'] if 'source' in data else 'n/a',
             data['status_type'] if 'status_type' in data else 'n/a',
+            data['link'] if 'link' in data else 'n/a',
             data['type'] if 'type' in data else 'n/a',
             data['updated_time'] if 'updated_time' in data else 'n/a',
             data['shares']['count'] if 'shares' in data else '0'
@@ -187,7 +207,8 @@ class CommentWriter(CSVWriter):
     Options:
         - Order
         - Filter
-    https://developers.facebook.com/docs/graph-api/reference/v2.9/object/comments
+    https://developers.facebook.com/docs/
+        graph-api/reference/v2.9/object/comments
     """
     def __init__(self, job_id):
         super().__init__(job_id, 'comments')
@@ -201,6 +222,7 @@ class CommentWriter(CSVWriter):
             'user_name',
             'created_time',
             'like_count',
+            'attachment',
             'comment_count',
             'comm_type'
             ))
@@ -215,6 +237,7 @@ class CommentWriter(CSVWriter):
             data['from']['name'],  # Removed utf-8 encoding
             data['created_time'],
             data['like_count'],
+            data['attachment'] if 'attachment' in data else 'n/a',
             data['comment_count'] if 'comment_count' in data else 'n/a',
             data['comm_type']  # Must add to dict
             ))
@@ -235,7 +258,47 @@ class SharedPostsWriter(CSVWriter):
 
     def header(self):
         self.write((
+            'origin_id',
+            'id',
+            'story',
             'from_id',
+            'from_name',
+            'to_id',
+            'to_name',
+            'created_time',
+            'updated_time'
+            ))
+
+    def row(self, data):
+        self.write((
+            data['to_id'],
+            data['id'],
+            data['story'] if 'story' in data else 'n/a',
+            data['from']['id'],
+            data['from']['name'],
+            data['to']['data'][0]['id'] if 'to' in data else 'n/a',
+            data['to']['data'][0]['name'] if 'to' in data else 'n/a',
+            data['created_time'],
+            data['updated_time']
+            ))
+
+
+class ParentPostsWriter(CSVWriter):
+    """
+    Implementation of a class to write comments
+
+    TODO:
+        - Still unsure about the fields of this one
+        - 'To' returns an array, I am treating it as an array
+        with a single value and have not yet seen an exception
+        but best keep this in mind
+    """
+    def __init__(self, job_id):
+        super().__init__(job_id, 'parentposts')
+
+    def header(self):
+        self.write((
+            'origin_id',
             'id',
             'story',
             'from_id',
